@@ -55,25 +55,21 @@ void displayMenu() {
 void startCompress() {
     char filePath[PATH_SIZE];
     
-    printf("\n--------------------------\n");
+    printf("--------------------------\n");
     printf("Enter the file path to be compressed: ");
     getPath(filePath, PATH_SIZE);
 
     CompressFile(filePath);
-
-    printf("--------------------------\n");
 }
 
 void startDecompress() {
     char filePath[PATH_SIZE];
     
-    printf("\n--------------------------\n");
+    printf("--------------------------\n");
     printf("Enter the file path to be decompressed: ");
     getPath(filePath, PATH_SIZE);
 
     DecompressFile(filePath);
-    
-    printf("--------------------------\n");
 }
 
 void getPath(char *filePath, int size) {    
