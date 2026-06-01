@@ -11,147 +11,25 @@ typedef struct Node {
 } Node;
 
 // Priority Queue Node
-typedef struct PriorityQueueNode {
+typedef struct queueNode {
     void *data;                     
-    struct PriorityQueueNode *next;  
-} PriorityQueueNode;
+    struct queueNode *next;  
+} queueNode;
 
 typedef struct {
     unsigned char byte;
     long frequency;     
 } HuffmanNode;
 
-// Cria um nó da árvore encapsulando os dados de huffman
-static Node* create_HuffmanNode(unsigned char byte, long frequency) {
-    HuffmanNode* HuffmanData = (HuffmanNode*) malloc(sizeof(HuffmanNode));
-    if (!HuffmanData) return NULL;
-   
-    HuffmanData->byte = byte;
-    HuffmanData->frequency = frequency;
+static int compare_HuffmanNode(void *a, void *b);
+static Node* create_HuffmanNode(unsigned char byte, long frequency);
+static Node* generateBinaryTree(queueNode *queue, int (*compareFunction)(void*, void*));
+static void enqueue(queueNode **head, void *treeNode, int (*compare)(void*, void*));
+static void* dequeue(queueNode **head);
+static void printTree_preOrder(Node *root, FILE *out, int *tree_size);
 
-    Node *node = (Node*) malloc(sizeof(Node));
-    if (!node) { free(HuffmanData); return NULL; }
-    
-    node->data = HuffmanData;
-    node->left = NULL;
-    node->right = NULL;
-    
-    return node;
-}
 
-// Ordenar a Fila
-static int compare_HuffmanNode(void *a, void *b) {
-    Node *na = (Node*)a;
-    Node *nb = (Node*)b;
-    HuffmanNode *da = (HuffmanNode*)na->data;
-    HuffmanNode *db = (HuffmanNode*)nb->data;
-    
-    if (da->frequency < db->frequency) return -1;
-    if (da->frequency > db->frequency) return 1;
-    return 0;
-}
-
-// Insere na fila de forma ordenada
-static void enqueue(PriorityQueueNode **head, void *treeNode, int (*compare)(void*, void*)) {
-    PriorityQueueNode *new_node = (PriorityQueueNode*) malloc(sizeof(PriorityQueueNode));
-    if (!new_node) return;
-    new_node->data = treeNode;
-    new_node->next = NULL;
-
-    if (*head == NULL || compare(treeNode, (*head)->data) < 0) {
-        new_node->next = *head;
-        *head = new_node;
-    } else {
-        PriorityQueueNode *current = *head;
-        while (current->next != NULL && compare(treeNode, current->next->data) >= 0) {
-            current = current->next;
-        }
-        new_node->next = current->next;
-        current->next = new_node;
-    }
-}
-
-// Remove e retorna o elemento de maior prioridade/menor frequência fila
-static void* dequeue(PriorityQueueNode **head) {
-    if (*head == NULL) return NULL;
-    
-    PriorityQueueNode *temp = *head;
-    void *treeNode = temp->data;
-    *head = (*head)->next;
-    free(temp);
-    
-    return treeNode;
-}
-
-// Função recursiva para varrer a árvore e montar a tabela de strings (Dicionário de tamanho 257)
-static void generateDictionary(Node *root, char dict[256][257], char *current_path, int depth) {
-    if (root == NULL) return;
-
-    if (root->left == NULL && root->right == NULL) {
-        current_path[depth] = '\0';
-        HuffmanNode *hd = (HuffmanNode*)root->data;
-        strcpy(dict[hd->byte], current_path);
-        return;
-    }
-
-    current_path[depth] = '0';
-    generateDictionary(root->left, dict, current_path, depth + 1);
-
-    current_path[depth] = '1';
-    generateDictionary(root->right, dict, current_path, depth + 1);
-}
-
-// Grava a árvore mapeada em Pré-Ordem no arquivo e conta o seu tamanho total
-static void printTree_preOrder(Node *root, FILE *out, int *tree_size) {
-    if (root == NULL) return;
-
-    HuffmanNode *hd = (HuffmanNode*)root->data;
-    
-    if (root->left == NULL && root->right == NULL) {
-        if (hd->byte == '*' || hd->byte == '\\') {
-            fputc('\\', out);
-            (*tree_size)++;
-        }
-        fputc(hd->byte, out);
-        (*tree_size)++;
-    } else {
-        fputc('*', out);
-        (*tree_size)++;
-        printTree_preOrder(root->left, out, tree_size);
-        printTree_preOrder(root->right, out, tree_size);
-    }
-}
-
-static Node* generateBinaryTree(PriorityQueueNode* queue, int (*compareFunction)(void*, void*)){
-    while (queue != NULL && queue->next != NULL) {
-        Node *lowestFreq = (Node*) dequeue(&queue);
-        Node *secLowestFreq = (Node*) dequeue(&queue);
-
-        HuffmanNode *left = (HuffmanNode*)lowestFreq->data;
-        HuffmanNode *right = (HuffmanNode*)secLowestFreq->data;
-
-        Node *parent = create_HuffmanNode('*', left->frequency + right->frequency);
-        parent->left = lowestFreq;
-        parent->right = secLowestFreq;
-
-        enqueue(&queue, parent, compareFunction);
-    }
-    return (Node*) dequeue(&queue);
-}
-
-// Libera a arvore de forma recursiva
-static void free_tree(Node *root) {
-    if (root == NULL) return;
-    
-    free_tree(root->left);
-    free_tree(root->right);
-    
-    if (root->data) { free(root->data); }
-    
-    free(root);
-}
-
-void CompressFile(const char* filePath) {
+void CompressFile(const char *filePath) {
     FILE *inputFile = fopen(filePath, "rb");
     if (inputFile == NULL) {
         printf("\nErro: O arquivo '%s' nao pôde ser aberto.\n", filePath);
@@ -165,7 +43,7 @@ void CompressFile(const char* filePath) {
         frequencies[(unsigned char)current_char]++;
     }
 
-    PriorityQueueNode *queue_head = NULL;
+    queueNode *queue_head = NULL;
     for (int i = 0; i < 256; i++) {
         if (frequencies[i] > 0) {
             Node *leaf = create_HuffmanNode((unsigned char)i, frequencies[i]);
@@ -179,7 +57,6 @@ void CompressFile(const char* filePath) {
         return;
     }
 
-    // CORREÇÃO: Caso extremo de arquivo com apenas 1 caractere único repetido
     if (queue_head->next == NULL) {
         Node *singleNode = (Node*)queue_head->data;
         HuffmanNode *singleData = (HuffmanNode*)singleNode->data;
@@ -190,7 +67,6 @@ void CompressFile(const char* filePath) {
 
     Node *root = generateBinaryTree(queue_head, compare_HuffmanNode);
 
-    // CORREÇÃO: Ajustado buffers para tamanho seguro de 257 posições
     char dictionary[256][257] = {{0}};
     char current_path[257] = {0};
     generateDictionary(root, dictionary, current_path, 0);
@@ -252,4 +128,135 @@ void CompressFile(const char* filePath) {
 
     printf("\nArquivo comprimido com sucesso!\n");
     printf("Salvo em: %s\n", outPath);
+}
+
+
+// Cria um nó da árvore encapsulando os dados de huffman
+static Node* create_HuffmanNode(unsigned char byte, long frequency) {
+    HuffmanNode* HuffmanData = (HuffmanNode*) malloc(sizeof(HuffmanNode));
+    if (!HuffmanData) return NULL;
+   
+    HuffmanData->byte = byte;
+    HuffmanData->frequency = frequency;
+
+    Node *node = (Node*) malloc(sizeof(Node));
+    if (!node) { free(HuffmanData); return NULL; }
+    
+    node->data = HuffmanData;
+    node->left = NULL;
+    node->right = NULL;
+    
+    return node;
+}
+
+// Ordenar a Fila
+static int compare_HuffmanNode(void *a, void *b) {
+    Node *na = (Node*)a;
+    Node *nb = (Node*)b;
+    HuffmanNode *da = (HuffmanNode*)na->data;
+    HuffmanNode *db = (HuffmanNode*)nb->data;
+    
+    if (da->frequency < db->frequency) return -1;
+    if (da->frequency > db->frequency) return 1;
+    return 0;
+}
+
+// Insere na fila de forma ordenada
+static void enqueue(queueNode **head, void *treeNode, int (*compare)(void*, void*)) {
+    queueNode *new_node = (queueNode*) malloc(sizeof(queueNode));
+    if (!new_node) return;
+    new_node->data = treeNode;
+    new_node->next = NULL;
+
+    if (*head == NULL || compare(treeNode, (*head)->data) < 0) {
+        new_node->next = *head;
+        *head = new_node;
+    } else {
+        queueNode *current = *head;
+        while (current->next != NULL && compare(treeNode, current->next->data) >= 0) {
+            current = current->next;
+        }
+        new_node->next = current->next;
+        current->next = new_node;
+    }
+}
+
+// Remove e retorna o elemento de maior prioridade/menor frequência fila
+static void* dequeue(queueNode **head) {
+    if (*head == NULL) return NULL;
+    
+    queueNode *temp = *head;
+    void *treeNode = temp->data;
+    *head = (*head)->next;
+    free(temp);
+    
+    return treeNode;
+}
+
+// Função recursiva para varrer a árvore e montar a tabela de strings (Dicionário de tamanho 257)
+static void generateDictionary(Node *root, char dict[256][257], char *current_path, int depth) {
+    if (root == NULL) return;
+
+    if (root->left == NULL && root->right == NULL) {
+        current_path[depth] = '\0';
+        HuffmanNode *hd = (HuffmanNode*)root->data;
+        strcpy(dict[hd->byte], current_path);
+        return;
+    }
+
+    current_path[depth] = '0';
+    generateDictionary(root->left, dict, current_path, depth + 1);
+
+    current_path[depth] = '1';
+    generateDictionary(root->right, dict, current_path, depth + 1);
+}
+
+// Grava a árvore mapeada em Pré-Ordem no arquivo e conta o seu tamanho total
+static void printTree_preOrder(Node *root, FILE *out, int *tree_size) {
+    if (root == NULL) return;
+
+    HuffmanNode *hd = (HuffmanNode*)root->data;
+    
+    if (root->left == NULL && root->right == NULL) {
+        if (hd->byte == '*' || hd->byte == '\\') {
+            fputc('\\', out);
+            (*tree_size)++;
+        }
+        fputc(hd->byte, out);
+        (*tree_size)++;
+    } else {
+        fputc('*', out);
+        (*tree_size)++;
+        printTree_preOrder(root->left, out, tree_size);
+        printTree_preOrder(root->right, out, tree_size);
+    }
+}
+
+static Node* generateBinaryTree(queueNode* queue, int (*compareFunction)(void*, void*)){
+    while (queue != NULL && queue->next != NULL) {
+        Node *lowestFreq = (Node*) dequeue(&queue);
+        Node *secLowestFreq = (Node*) dequeue(&queue);
+
+        HuffmanNode *left = (HuffmanNode*)lowestFreq->data;
+        HuffmanNode *right = (HuffmanNode*)secLowestFreq->data;
+
+        Node *parent = create_HuffmanNode('*', left->frequency + right->frequency);
+        parent->left = lowestFreq;
+        parent->right = secLowestFreq;
+
+        enqueue(&queue, parent, compareFunction);
+    }
+    return (Node*) dequeue(&queue);
+}
+
+// Libera a arvore de forma recursiva
+static void free_tree(Node *root) {
+    if (root == NULL) return;
+    
+    free_tree(root->left);
+    free_tree(root->right);
+    
+    if (root->data) { free(root->data); }
+    
+    free(root);
 }

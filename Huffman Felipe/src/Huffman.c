@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-// CORREÇÃO: Inclusão correta e limpa dos arquivos de cabeçalho (.h)
 #include "../include/compresser.h"
 #include "../include/descompresser.h"
 
@@ -73,8 +72,19 @@ void startDecompress() {
 
 void getPath(char *filePath, int size) {    
     int c;
+    // Limpa o buffer de entrada residual
     while ((c = getchar()) != '\n' && c != EOF); 
 
-    fgets(filePath, size, stdin);
+    // Lê a linha digitada pelo usuário
+    if (fgets(filePath, size, stdin) == NULL) return;
     filePath[strcspn(filePath, "\n")] = '\0';
+
+    // Remove as aspas, caso existam
+    int len = strlen(filePath);
+    if (len >= 2 && filePath[0] == '"' && filePath[len - 1] == '"') {
+        // Elimina a primeira aspa, ao mover os caracteres 1 para a esquerda
+        memmove(filePath, filePath + 1, len - 2);
+        // Defina a última aspas como termino de string
+        filePath[len - 2] = '\0';
+    }
 }
