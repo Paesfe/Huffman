@@ -1,12 +1,9 @@
-/*
-    Desenvolver bibliotecas locais
-    #include <../include/compresser.h>
-    #include <../include/descompresser.h>
-    #include <../include/reader.h>
-*/
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+// CORREÇÃO: Inclusão correta e limpa dos arquivos de cabeçalho (.h)
+#include "../include/compresser.h"
+#include "../include/descompresser.h"
 
 #define PATH_SIZE 256
 
@@ -15,16 +12,17 @@ void startCompress();
 void startDecompress();
 void getPath(char *filePath, int size);
 
-//Place Holder
-void CompressFile(const char* filePath);
-void DecompressFile(const char* filePath);
-
 int main(){
     while(1){
         displayMenu();
 
         int CommandInput;
-        scanf("%d", &CommandInput);
+        if (scanf("%d", &CommandInput) != 1) {
+            // Limpa o buffer em caso de input inválido não numérico
+            while (getchar() != '\n');
+            printf("Invalid input, try again!\n");
+            continue;
+        }
         
         switch (CommandInput){
             case 1:
@@ -43,6 +41,7 @@ int main(){
                 break;
         }
     }
+    return 0;
 }
 
 void displayMenu() {
@@ -77,10 +76,5 @@ void getPath(char *filePath, int size) {
     while ((c = getchar()) != '\n' && c != EOF); 
 
     fgets(filePath, size, stdin);
-    
     filePath[strcspn(filePath, "\n")] = '\0';
 }
-
-//Place Holder
-void CompressFile(const char* filePath){}
-void DecompressFile(const char* filePath){}
