@@ -26,7 +26,7 @@ typedef struct clause {
 typedef struct formula{
     clause *clauseHead;         
     int clauseCount;        
-    int distinctLiterals;     
+    int variableCount;     
 } formula;
 
 // Estrutura que guarda a interpretação atual
@@ -59,38 +59,38 @@ partialInt cloneInterpretation(partialInt *oldPi, int totalVars, int currentVar,
 nodeBinaryTree* solveSAT(formula *f, partialInt *pi, int currentVar);
 void printSolution(nodeBinaryTree *node, int totalVars);
 void freeFormula(formula *f);
-
+void freeTree(nodeBinaryTree *node);
 
 int main(){
     formula *f = createFormulaCNF();
     if (f == NULL) { return 1; }
     
-    printf("--- Formula lida (CNF) ---\n");
+    printf("\nFormula lida (CNF)\n");
     printFormula(f);
-
+    
     partialInt pi = initializePartialInterp(f);
 
     printf("\nProcessando a Arvore de Decisao...\n");
     nodeBinaryTree *root = solveSAT(f, &pi, 1);
 
     if (root->isSAT) {
-        printf("\nRESULTADO FINAL: SATISFATIVEL (SAT)\n");
-        printSolution(root, f->distinctLiterals);
+        printf("\nResultado final: SAT\n");
+        printSolution(root, f->variableCount);
     } else {
-        printf("\nRESULTADO FINAL: INSATISFATIVEL (UNSAT)\n");
-        printf("Nenhuma combinacao de valores torna a formula verdadeira.\n");
+        printf("\nResultado final: UNSAT\n");
+        printf("Nenhuma combinacao torna a formula verdadeira.\n");
     }
 
+    freeTree(root);
     freeFormula(f);
     return 0;
 }
 
-formula *initializeFormula()
-{
+formula *initializeFormula(){
     formula *newFormula = (formula *) malloc(sizeof(formula));
     newFormula->clauseHead = NULL;
     newFormula->clauseCount = 0;
-    newFormula->distinctLiterals = 0;
+    newFormula->variableCount = 0;
     return newFormula;
 }
 
@@ -98,7 +98,7 @@ formula *initializeFormula()
 formula* createFormulaCNF(){
     int maxCommentSize = 128;
     char comment[maxCommentSize];
-    char format[3];
+    char format[8];
     char command; 
 
     formula *inputFormula = initializeFormula();
@@ -109,23 +109,27 @@ formula* createFormulaCNF(){
                 break;
 
             case 'p': // Linha de configuração principal
-                scanf("%s %d %d", format, &inputFormula->distinctLiterals, &inputFormula->clauseCount);
+                scanf("%s %d %d", format, &inputFormula->variableCount, &inputFormula->clauseCount);
+                getchar();
 
                 if (strcmp(format, "cnf") != 0){
                     printf("ERROR: Formato não suportado. Esperado 'cnf'.\n");
+                    free(inputFormula);
                     return NULL;
                 }
 
                 // Leitura das cláusulas
                 if (formulaReader(inputFormula) == UNDEFINED){
                     printf("ERROR: Erro na leitura das cláusulas. Verifique o formato.\n");
+                    freeFormula(inputFormula);
                     return NULL;
                 }
 
-                break;
+                return inputFormula;
 
             default:
                 printf("ERROR: Comando desconhecido '%c'.\n", command); 
+                free(inputFormula);
                 return NULL;
         }
     }
@@ -170,7 +174,7 @@ int clauseReader(clause *c, formula *f){
         scanf("%d", &temp);
 
         // Verifica se não excede o limite definido pelo cabeçalho
-        if (abs(temp) > f->distinctLiterals){ return UNDEFINED; }
+        if (abs(temp) > f->variableCount){ return UNDEFINED; }
 
         // 0 == fim da cláusula, padrão DIMACS
         if (temp != 0) { c->literalHead = addLiteral(c->literalHead, abs(temp), (temp<0)); }
@@ -207,8 +211,8 @@ void printFormula(formula *f){
 // Cria um array que armazena a interpretação parcial de cada variável única da  formula, inicializando todas como UNDEFINED
 partialInt initializePartialInterp(formula *f){
     partialInt pi;
-    pi.valores = malloc(sizeof(short) * (f->distinctLiterals + 1)); 
-    for (int i = 0; i < f->distinctLiterals + 1; i++) { pi.valores[i] = UNDEFINED; }
+    pi.valores = malloc(sizeof(short) * (f->variableCount + 1)); 
+    for (int i = 0; i < f->variableCount + 1; i++) { pi.valores[i] = UNDEFINED; }
 
     return pi;
 }
@@ -286,14 +290,14 @@ nodeBinaryTree* solveSAT(formula *f, partialInt *pi, int currentVar) {
     }
 
     // Proteção: Se passamos do limite de variáveis e não deu SAT, o caminho falhou.
-    if (currentVar > f->distinctLiterals) {
+    if (currentVar > f->variableCount) {
         node->isSAT = false;
         return node;
     }
 
     //Ramificação(BACKTRACKING))
     //Ramo esquerdo: True
-    partialInt piLeft = cloneInterpretation(pi, f->distinctLiterals, currentVar, true);
+    partialInt piLeft = cloneInterpretation(pi, f->variableCount, currentVar, true);
     node->value = 1;
     node->left = solveSAT(f, &piLeft, currentVar + 1); // Desce na árvore (recursão)
     
@@ -304,7 +308,7 @@ nodeBinaryTree* solveSAT(formula *f, partialInt *pi, int currentVar) {
     }
 
     // Ramo direito: False
-    partialInt piRight = cloneInterpretation(pi, f->distinctLiterals, currentVar, false);
+    partialInt piRight = cloneInterpretation(pi, f->variableCount, currentVar, false);
     node->value = 0;
     node->right = solveSAT(f, &piRight, currentVar + 1); // Desce na árvore pela direita
     
@@ -325,9 +329,9 @@ void printSolution(nodeBinaryTree *node, int totalVars) {
 
     // Se chegamos no nó final (a folha que deu SAT)
     if (node->isSAT && node->left == NULL && node->right == NULL) {
-        printf("\n--- COMBINACAO DE SUCESSO ---\n");
+        printf("\nCombinacao de Sucesso:\n");
         for (int i = 1; i <= totalVars; i++) {
-            printf("Variavel x%d = %d\n", i, node->interpretacao.valores[i]);
+            printf("Var x%d = %d\n", i, node->interpretacao.valores[i]);
         }
         return;
     }
@@ -356,4 +360,16 @@ void freeFormula(formula *f) {
         currClause = nextClause;
     }
     free(f);
+}
+
+void freeTree(nodeBinaryTree *node) {
+    if (node == NULL) return;
+    
+    freeTree(node->left);
+    freeTree(node->right);
+    
+    // Libera o array de interpretação que este nó copiou
+    if (node->interpretacao.valores != NULL) { free(node->interpretacao.valores); }
+    
+    free(node);
 }
