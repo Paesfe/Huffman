@@ -27,6 +27,8 @@ void* createNode(unsigned char byte, unsigned long long freq) {
     return (void*)node;
 }
 
+//FUNÇÕES PARA A COMPRESSÃO
+
 int compareNode(void* node1, void* node2) {
     Node *a = (Node*) node1;
     Node *b = (Node*) node2;
@@ -206,39 +208,147 @@ void writeCompressed(char *filename, FILE *output, char **dictionary) {
     fclose(input);
 }
 
-int main() {
-    char filename[256];
-    printf("Digite o nome do arquivo a ser compactado (com sua extensao). ");
-    scanf("%s", filename);
-    getchar();
+//FUNÇÔES PARA A DESCOMPRESSÃO
+void* rebuildTree(int treeSize, int *index, FILE *input) {
+    if ((*index) >= treeSize) return NULL;
+    
+    int currByte = fgetc(input);
+    (*index)++;
 
-    char output[256];
-    strcpy(output, filename);
-    strcat(output, ".huff");
+    if (currByte == '\\') {
+        //fgetc retorna um int, logo não podemos criar currByte como char direto
+        int currByte = fgetc(input);
+        (*index)++;
+        return createNode((unsigned char)currByte, 0);
+    } else if (currByte == '*') {
+        Node *node = (Node*) createNode('*', 0);
 
-    unsigned long long freqArr[256] = {0};
-    countFreq(filename, freqArr);
+        //pré-ordem
+        node->left = (Node*) rebuildTree(treeSize, index, input);
+        node->right = (Node*) rebuildTree(treeSize, index, input);
 
-    void *queue = fillQueue(freqArr);
-
-    void *huffman = buildTree(&queue);
-
-    char *dictionary[256] = {NULL};
-    char currCode[256];
-    codes(huffman, currCode, 0, dictionary);
-
-    int sizeTree = treeSize(huffman);
-    int trashBits = trash(freqArr, dictionary);
-
-    FILE *outputFile = fopen(output, "wb");
-    if (outputFile == NULL) {
-        printf("Erro ao criar arquivo para compactacao.\n");
-        return 1;
+        return (void*) node;
+    } else {
+        //nó folha normal (caractere aleatório)
+        return createNode((unsigned char)currByte, 0);
     }
-    writeHeader(outputFile, trashBits, sizeTree, huffman);
-    writeCompressed(filename, outputFile, dictionary);
+}
 
-    printf("Arquivo compactado em %s.huff\n", output);
-    fclose(outputFile);
+void writeDescompressed(FILE *input, FILE *output, void *treeRoot, int trash) {
+    Node *root = (Node*) treeRoot;
+    Node *currNode = root;
+
+    int currByte = fgetc(input);
+    int nextByte;
+
+    while (currByte != EOF) {
+        nextByte = fgetc(input);
+
+        //se o próximo byte for o EOF, descontamos o lixo do byte atual, pois chegamos no ultimo
+        int bits = (nextByte == EOF) ? (8 - trash) : 8;
+
+        //lemos da esquerda para a direita até o eventual primeiro bit do lixo
+        for (int i = 7; i >= 8 - bits; i--) {
+            //isolando o bit atual
+            int currBit = (currByte >> i) & 1;
+            if (currBit) currNode = currNode->right;
+            else currNode = currNode->left;
+
+            if (currNode->left == NULL && currNode->right == NULL) {
+                //se chegar a um nó folha, recuperamos o byte e escrevemos no arquivo de saída
+                fputc(currNode->byte, output);
+                currNode = root; //voltando à raíz para o próximo byte
+            }
+        }
+
+        currByte = nextByte; //avançamos o byte atual
+    }
+}
+
+int main() {
+
+    int option = 0;
+    do {
+        printf("Bem vindo ao Algoritmo de Huffman.\nSelecione sua opcao:\n1 - Compactar\n2 - Descompactar\n");
+        scanf("%d", &option);
+        if (option == 1) {
+            char filename[256];
+            printf("Digite o nome do arquivo a ser compactado (com sua extensao). ");
+            scanf("%s", filename);
+            getchar();
+
+            char output[256];
+            strcpy(output, filename);
+            char *dot = strrchr(output, '.');
+            if (dot != NULL) *dot = '\0';
+            strcat(output, ".huff");
+
+            unsigned long long freqArr[256] = {0};
+            countFreq(filename, freqArr);
+
+            void *queue = fillQueue(freqArr);
+
+            void *huffman = buildTree(&queue);
+
+            char *dictionary[256] = {NULL};
+            char currCode[256];
+            codes(huffman, currCode, 0, dictionary);
+
+            int sizeTree = treeSize(huffman);
+            int trashBits = trash(freqArr, dictionary);
+
+            FILE *outputFile = fopen(output, "wb");
+            if (outputFile == NULL) {
+                printf("Erro ao criar arquivo para compactacao.\n");
+                return 1;
+            }
+            writeHeader(outputFile, trashBits, sizeTree, huffman);
+            writeCompressed(filename, outputFile, dictionary);
+
+            printf("Arquivo compactado em %s\n", output);
+            fclose(outputFile);
+        } else if (option == 2) {
+            char filename[256];
+            printf("Digite o nome do arquivo a ser descompactado (com sua extensao). ");
+            scanf("%s", filename);
+            getchar();
+
+            char ext[50];
+            printf("Digite a extensao para o qual deseja descompactar (ex: pdf, png, jpeg...). ");
+            scanf("%s", ext);
+            getchar();
+
+            char output[256];
+            strcpy(output, filename);
+            char *dot = strrchr(output, '.');
+            if(dot != NULL) *dot = '\0';
+            strcat(output, ".");
+            strcat(output, ext);
+
+            FILE *input = fopen(filename, "rb");
+            int byte1 = fgetc(input);
+            int byte2 = fgetc(input);
+
+            //descobrindo o tamanho do lixo (3 primeiros bits)
+            int trashSize = byte1 >> 5;
+            //montamos o tamanho da arvore isolando os 5 bits restantes do primeiro byte com 0x1F (0001 1111) e deslocamos 8 posições
+            //para abrir espaço para o segundo byte, juntando com um OR
+            int treeSize = ((byte1 & 0x1F) << 8) | byte2;
+            int index = 0;
+            void *huffmanTree = rebuildTree(treeSize, &index, input);
+            FILE *outputFile = fopen(output, "wb");
+            if (outputFile == NULL) {
+                printf("Erro ao criar arquivo para descompactar.\n");
+                fclose(input);
+                return 1;
+            }
+
+            writeDescompressed(input, outputFile, huffmanTree, trashSize);
+            printf("Arquivo descompactado em %s\n", output);
+            fclose(input);
+            fclose(outputFile);
+        }
+    } while (option != 1 && option != 2);
+    
     return 0;
 }
