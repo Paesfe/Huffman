@@ -7,7 +7,6 @@
 // Undefined = -1; False = 0; True = 1
 #define UNDEFINED -1 
 
-
 // Lista encadeada para armazenar os literais de uma cláusula
 typedef struct literal {
     struct literal *next;
@@ -26,7 +25,7 @@ typedef struct clause {
 typedef struct formula{
     clause *clauseHead;         
     int clauseCount;        
-    int atomCount;     
+    int atomCount;
 } formula;
 
 // Estrutura que guarda a interpretação atual
@@ -60,20 +59,9 @@ void freeFormula(formula *f);
 void freeTree(DecisionNode *node);
 
 int main() {
-    char filename[256];
-    char filepath[512];
 
-    printf("Digite o nome do arquivo a ser lido: ");
-    scanf("%255s", filename);
-    snprintf(filepath, sizeof(filepath), "../%s", filename);
-
-    // Tenta abrir o arquivo com o nome digitado
-    FILE *file = fopen(filepath, "r");
-    if (file == NULL) {
-        printf("Erro ao abrir o arquivo: '%s'\n", filename);
-        printf("Verifique se ele esta na mesma pasta do programa.\n");
-        return 1;
-    }
+    FILE *file = openFile();
+    if (file == NULL) { return 1; }
 
     formula *f = createFormulaCNF(file);
     fclose(file);
@@ -95,6 +83,29 @@ int main() {
     free(pi.truthValue);
 
     return 0;
+}
+
+FILE *openFile() {
+    char filename[256];
+
+    printf("Digite o nome do arquivo a ser lido: ");
+    scanf("%255s", filename);
+    
+    // Tenta abrir o arquivo diretamente (caso o terminal esteja na pasta certa)
+    FILE *file = fopen(filename, "r");
+    if (file != NULL) { return file; } 
+    
+    // Se falhou, tenta buscar na pasta de trás
+    char filepath[512];
+    snprintf(filepath, sizeof(filepath), "../%s", filename);
+    
+    FILE *fallbackFile = fopen(filepath, "r"); 
+    if (fallbackFile != NULL) { return fallbackFile; }
+
+    // Se chegou até aqui, é porque falhou nas duas tentativas
+    printf("Erro ao abrir o arquivo: '%s'\n", filename);
+    
+    return NULL;
 }
 
 formula *initializeFormula(){
