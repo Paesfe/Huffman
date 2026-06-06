@@ -11,7 +11,7 @@
 // Lista encadeada para armazenar os literais de uma cláusula
 typedef struct literal {
     struct literal *next;
-    int variable;             
+    int atomID;             
     bool isNegative;        
 } literal;
 
@@ -26,43 +26,58 @@ typedef struct clause {
 typedef struct formula{
     clause *clauseHead;         
     int clauseCount;        
-    int variableCount;     
+    int atomCount;     
 } formula;
 
 // Estrutura que guarda a interpretação atual
 // Undefined = -1; False = 0; True = 1
 typedef struct partialInt{
-    short *valores;
+    short *truthValue; 
 } partialInt;
 
 // Estrutura da arvore de decisão
-typedef struct nodeBinaryTree{
-    int literal;                           // Qual variável este nó está testando
+typedef struct DecisionNode{
+    int decisionAtomID;                    // Qual variável este nó está testando
     short value;                           // (0 ou 1)
-    partialInt interpretacao;              // Estado da interpretação do node
-    struct nodeBinaryTree *left;           // Ramo positivo (True)
-    struct nodeBinaryTree *right;          // Ramo negativo (False)
+    struct DecisionNode *left;             // Ramo positivo (True)
+    struct DecisionNode *right;            // Ramo negativo (False)
     bool isSAT;                            // Se o caminho resultou em SAT ou UNSAT
-} nodeBinaryTree;
+} DecisionNode;
 
 
 formula *initializeFormula();
-formula* createFormulaCNF();
-int formulaReader(formula *f);
+formula* createFormulaCNF(FILE *file);
+int formulaReader(formula *f, FILE *file);
 clause *addClause(formula *f);
 literal *addLiteral(literal *l, int variable, bool isNegative);
-int clauseReader(clause *c, formula *f);
+int clauseReader(clause *c, formula *f, FILE *file);
 void printFormula(formula *f);
 partialInt initializePartialInterp(formula *f);
 int evaluateFormula(formula *f, partialInt *pi);
-partialInt cloneInterpretation(partialInt *oldPi, int totalVars, int currentVar, short guess);
-nodeBinaryTree* solveSAT(formula *f, partialInt *pi, int currentVar);
-void printSolution(nodeBinaryTree *node, int totalVars);
+DecisionNode* solveSAT(formula *f, partialInt *pi, int currentVar);
+void printSolution(DecisionNode *node, int totalVars, partialInt *pi);
 void freeFormula(formula *f);
-void freeTree(nodeBinaryTree *node);
+void freeTree(DecisionNode *node);
 
-int main(){
-    formula *f = createFormulaCNF();
+int main() {
+    char filename[256];
+    char filepath[512];
+
+    printf("Digite o nome do arquivo a ser lido: ");
+    scanf("%255s", filename);
+    snprintf(filepath, sizeof(filepath), "../%s", filename);
+
+    // Tenta abrir o arquivo com o nome digitado
+    FILE *file = fopen(filepath, "r");
+    if (file == NULL) {
+        printf("Erro ao abrir o arquivo: '%s'\n", filename);
+        printf("Verifique se ele esta na mesma pasta do programa.\n");
+        return 1;
+    }
+
+    formula *f = createFormulaCNF(file);
+    fclose(file);
+
     if (f == NULL) { return 1; }
     
     printf("\nFormula lida (CNF)\n");
@@ -71,18 +86,14 @@ int main(){
     partialInt pi = initializePartialInterp(f);
 
     printf("\nProcessando a Arvore de Decisao...\n");
-    nodeBinaryTree *root = solveSAT(f, &pi, 1);
+    DecisionNode *root = solveSAT(f, &pi, 1);
 
-    if (root->isSAT) {
-        printf("\nResultado final: SAT\n");
-        printSolution(root, f->variableCount);
-    } else {
-        printf("\nResultado final: UNSAT\n");
-        printf("Nenhuma combinacao torna a formula verdadeira.\n");
-    }
+    printSolution(root, f->atomCount, &pi);
 
     freeTree(root);
     freeFormula(f);
+    free(pi.truthValue);
+
     return 0;
 }
 
@@ -90,27 +101,28 @@ formula *initializeFormula(){
     formula *newFormula = (formula *) malloc(sizeof(formula));
     newFormula->clauseHead = NULL;
     newFormula->clauseCount = 0;
-    newFormula->variableCount = 0;
+    newFormula->atomCount = 0;
     return newFormula;
 }
 
 // Faz a leitura da Fórmula a partir da entrada padrão
-formula* createFormulaCNF(){
+formula* createFormulaCNF(FILE *file) {
     int maxCommentSize = 128;
     char comment[maxCommentSize];
     char format[8];
     char command; 
 
     formula *inputFormula = initializeFormula();
-    while(scanf(" %c", &command) != EOF){
+    
+    while(fscanf(file, " %c", &command) != EOF) {
         switch (command){
-            case 'c': // Linha de comentário, ignora o restante da linha
-                fgets(comment, maxCommentSize, stdin); // Lê e descarta o comentário
+            case 'c': 
+                fgets(comment, maxCommentSize, file); 
                 break;
 
-            case 'p': // Linha de configuração principal
-                scanf("%s %d %d", format, &inputFormula->variableCount, &inputFormula->clauseCount);
-                getchar();
+            case 'p': 
+                fscanf(file, "%s %d %d", format, &inputFormula->atomCount, &inputFormula->clauseCount);
+                fgetc(file); // Limpa o '\n' do buffer
 
                 if (strcmp(format, "cnf") != 0){
                     printf("ERROR: Formato não suportado. Esperado 'cnf'.\n");
@@ -118,8 +130,8 @@ formula* createFormulaCNF(){
                     return NULL;
                 }
 
-                // Leitura das cláusulas
-                if (formulaReader(inputFormula) == UNDEFINED){
+                // Passe o arquivo para a próxima função
+                if (formulaReader(inputFormula, file) == UNDEFINED){
                     printf("ERROR: Erro na leitura das cláusulas. Verifique o formato.\n");
                     freeFormula(inputFormula);
                     return NULL;
@@ -133,19 +145,16 @@ formula* createFormulaCNF(){
                 return NULL;
         }
     }
-
     return inputFormula;
 }
 
 // Faz a leitura das clauses da formula, com base na informação do cabecalho
-int formulaReader(formula *f){
+int formulaReader(formula *f, FILE *file) {
     for (int i = 0; i < f->clauseCount; i++){
         clause *newClause = addClause(f);
-        // Retorna UNDEFINED se houver erro de formato ou limite
-        if ( clauseReader(newClause, f) == UNDEFINED){ return UNDEFINED; }
+        if ( clauseReader(newClause, f, file) == UNDEFINED){ return UNDEFINED; }
     }
-
-    return 0; // Sucesso
+    return 0;
 }
 
 // Cria uma clause vazia, e adiciona no início da lista encadeada de cláusulas da fórmula
@@ -161,20 +170,20 @@ clause *addClause(formula *f){
 // Insere um literal na lista encadeada de uma cláusula específica
 literal *addLiteral(literal *l, int variable, bool isNegative){
     literal *newLiteral = (literal *)malloc(sizeof(literal));
-    newLiteral->variable = variable;
+    newLiteral->atomID = variable;
     newLiteral->isNegative = isNegative;
     newLiteral->next = l;
     return newLiteral;
 }
 
 // Lê individualmente cada literal dentro de uma determinada clausula, até encontrar 0
-int clauseReader(clause *c, formula *f){
+int clauseReader(clause *c, formula *f, FILE *file){
     while(1){
         int temp;
-        scanf("%d", &temp);
+        fscanf(file, "%d", &temp);
 
         // Verifica se não excede o limite definido pelo cabeçalho
-        if (abs(temp) > f->variableCount){ return UNDEFINED; }
+        if (abs(temp) > f->atomCount){ return UNDEFINED; }
 
         // 0 == fim da cláusula, padrão DIMACS
         if (temp != 0) { c->literalHead = addLiteral(c->literalHead, abs(temp), (temp<0)); }
@@ -193,8 +202,8 @@ void printFormula(formula *f){
         printf("(");
         literal *currentLiteral = currentClause->literalHead;
         while(currentLiteral != NULL){
-            if (currentLiteral->isNegative) { printf("~%d", currentLiteral->variable); }
-            else { printf("%d", currentLiteral->variable); }
+            if (currentLiteral->isNegative) { printf("~%d", currentLiteral->atomID); }
+            else { printf("%d", currentLiteral->atomID); }
 
             if (currentLiteral->next != NULL){ printf(" V "); } // Imprime o 'OR' entre literais
             currentLiteral = currentLiteral->next;
@@ -211,8 +220,8 @@ void printFormula(formula *f){
 // Cria um array que armazena a interpretação parcial de cada variável única da  formula, inicializando todas como UNDEFINED
 partialInt initializePartialInterp(formula *f){
     partialInt pi;
-    pi.valores = malloc(sizeof(short) * (f->variableCount + 1)); 
-    for (int i = 0; i < f->variableCount + 1; i++) { pi.valores[i] = UNDEFINED; }
+    pi.truthValue = malloc(sizeof(short) * (f->atomCount + 1)); 
+    for (int i = 0; i < f->atomCount + 1; i++) { pi.truthValue[i] = UNDEFINED; }
 
     return pi;
 }
@@ -231,7 +240,7 @@ int evaluateFormula(formula *f, partialInt *pi) {
         
         // Percorre os literais dentro de uma cláusula específica
         while (currentLiteral != NULL) {
-            short val = pi->valores[currentLiteral->variable];
+            short val = pi->truthValue[currentLiteral->atomID];
             
             if (val == UNDEFINED) { clauseIsUndefined = true; }
             else {
@@ -257,90 +266,75 @@ int evaluateFormula(formula *f, partialInt *pi) {
     else { return UNDEFINED; } // Ainda precisa descer mais na árvore
 }
 
-// Cria uma cópia do interpretação atual, e adiciona o novo chute (0 ou 1) para a variável
-partialInt cloneInterpretation(partialInt *oldPi, int totalVars, int currentVar, short guess) {
-    partialInt newPi;
-    newPi.valores = malloc(sizeof(short) * (totalVars + 1));
-    for (int i = 1; i <= totalVars; i++) { newPi.valores[i] = oldPi->valores[i];}
-    newPi.valores[currentVar] = guess;
-    
-    return newPi;
-}
-
 // Função recursiva que monta a Árvore de Decisão usando Backtracking
-nodeBinaryTree* solveSAT(formula *f, partialInt *pi, int currentVar) {
+DecisionNode* solveSAT(formula *f, partialInt *pi, int currentVar) {
     //Cria a raiz da árvore de decisão
-    nodeBinaryTree *node = malloc(sizeof(nodeBinaryTree));
-    node->literal = currentVar;
-    node->interpretacao = *pi;
+    DecisionNode *node = malloc(sizeof(DecisionNode));
+    node->decisionAtomID = currentVar;
     node->left = NULL;
     node->right = NULL;
 
     //Avalia o estado da fórmula com os chutes atuais
-    int status = evaluateFormula(f, pi);
+    int evaluationResult = evaluateFormula(f, pi);
 
-    if (status == 1) { 
+    if (evaluationResult == 1) { 
         node->isSAT = true;
         return node;
     }
  
-    if (status == 0) { 
+    if (evaluationResult == 0) { 
         node->isSAT = false;
         return node;
     }
 
     // Proteção: Se passamos do limite de variáveis e não deu SAT, o caminho falhou.
-    if (currentVar > f->variableCount) {
+    if (currentVar > f->atomCount) {
         node->isSAT = false;
         return node;
     }
 
     //Ramificação(BACKTRACKING))
-    //Ramo esquerdo: True
-    partialInt piLeft = cloneInterpretation(pi, f->variableCount, currentVar, true);
+    // 1. Caminho assumindo que a variável é VERDADEIRA (1)
+    pi->truthValue[currentVar] = 1; // MODIFICA O ARRAY GLOBAL DIRETAMENTE
     node->value = 1;
-    node->left = solveSAT(f, &piLeft, currentVar + 1); // Desce na árvore (recursão)
+    node->left = solveSAT(f, pi, currentVar + 1);
     
-    // Verifica se o caminho da esquerda deu SAT, com isso não precisa testar a direita
     if (node->left->isSAT) {
         node->isSAT = true;
-        return node;
+        return node; // Achou SAT, sobe sem desfazer a modificação.
     }
 
-    // Ramo direito: False
-    partialInt piRight = cloneInterpretation(pi, f->variableCount, currentVar, false);
+    // 2. Se o caminho 1 falhou, tentamos o Caminho assumindo FALSA (0)
+    pi->truthValue[currentVar] = 0; // SOBRESCREVE A MODIFICAÇÃO ANTERIOR
     node->value = 0;
-    node->right = solveSAT(f, &piRight, currentVar + 1); // Desce na árvore pela direita
+    node->right = solveSAT(f, pi, currentVar + 1); 
     
-    // Verifica se pelo caminho da direita deu SAT
     if (node->right->isSAT) {
         node->isSAT = true;
         return node;
     }
 
-    // Se ambos falharam, o ramo não possue solução.
+    // 3. Se AMBOS falharam
+    // Desfaz a alteração feita, para que o nó pai receba receba o array no estado original
+    pi->truthValue[currentVar] = UNDEFINED; 
+
     node->isSAT = false;
     return node;
 }
 
+// Como usamos um array único, 'pi' já volta da árvore com a solução gravada nele.
+void printSolution(DecisionNode *root, int totalVars, partialInt *pi) {
+    if (root == NULL) return;
 
-void printSolution(nodeBinaryTree *node, int totalVars) {
-    if (node == NULL) return;
-
-    // Se chegamos no nó final (a folha que deu SAT)
-    if (node->isSAT && node->left == NULL && node->right == NULL) {
-        printf("\nCombinacao de Sucesso:\n");
+    if (!root->isSAT) {
+        printf("\nResultado final: UNSAT\n");
+        printf("Nenhuma combinacao torna a formula verdadeira.\n");
+    } else {
+        printf("\nResultado final: SAT\n");
+        printf("Combinacao de Sucesso:\n");
         for (int i = 1; i <= totalVars; i++) {
-            printf("Var x%d = %d\n", i, node->interpretacao.valores[i]);
+            printf("Var x%d = %d\n", i, pi->truthValue[i]);
         }
-        return;
-    }
-
-    // Procura o caminho do sucesso pela árvore para imprimir
-    if (node->left && node->left->isSAT) {
-        printSolution(node->left, totalVars);
-    } else if (node->right && node->right->isSAT) {
-        printSolution(node->right, totalVars);
     }
 }
 
@@ -362,14 +356,11 @@ void freeFormula(formula *f) {
     free(f);
 }
 
-void freeTree(nodeBinaryTree *node) {
+void freeTree(DecisionNode *node) {
     if (node == NULL) return;
     
     freeTree(node->left);
     freeTree(node->right);
-    
-    // Libera o array de interpretação que este nó copiou
-    if (node->interpretacao.valores != NULL) { free(node->interpretacao.valores); }
     
     free(node);
 }
