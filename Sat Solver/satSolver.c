@@ -3,9 +3,32 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include <stdbool.h>
+#include <limits.h>
 
 // Undefined = -1; False = 0; True = 1
 #define UNDEFINED -1 
+
+// Representa uma única equação da Teoria LIA (ex: 2x <= 9)
+typedef struct LIAConstraint {
+    int atomID;                 // ID da variável Booleana que ativa esta equação
+    int coefficient;            // Multiplicador da variável matemática 'x' (ex: o '2' em 2x)
+    char mathVar;               // Letra da variável
+    int constantValue;          // O valor após o operador (ex: o '9' em <= 9)
+    bool isUpperBound;          // Verdadeiro se for um limite de teto (<=). Falso se for limite de piso (>=).
+    struct LIAConstraint *next; // Ponteiro para a próxima equação da lista encadeada
+} LIAConstraint;
+
+// Guarda a lista de todas as equações matemáticas lidas do arquivo
+typedef struct LIATheory {
+    LIAConstraint *constraintListHead; // Ponteiro para o início da lista de equações
+    int totalConstraints;              // Quantidade total de equações lidas
+} LIATheory;
+
+// Representa o intervalo de respostas matematicamente válidas para 'x'
+typedef struct Interval {
+    int minimumValue; // Limite inferior do intervalo (Piso)
+    int maximumValue; // Limite superior do intervalo (Teto)
+} Interval;
 
 // Lista encadeada para armazenar os literais de uma cláusula
 typedef struct literal {
@@ -43,43 +66,64 @@ typedef struct DecisionNode{
     bool isSAT;                            // Se o caminho resultou em SAT ou UNSAT
 } DecisionNode;
 
-
+FILE *openFile();
 formula *initializeFormula();
-formula* createFormulaCNF(FILE *file);
+formula* createFormulaCNF(FILE *file, LIATheory *theory);
 int formulaReader(formula *f, FILE *file);
 clause *addClause(formula *f);
 literal *addLiteral(literal *l, int variable, bool isNegative);
 int clauseReader(clause *c, formula *f, FILE *file);
-void printFormula(formula *f);
+void printClauses(formula *f);
 partialInt initializePartialInterp(formula *f);
 int evaluateFormula(formula *f, partialInt *pi);
 DecisionNode* solveSAT(formula *f, partialInt *pi, int currentVar);
-void printSolution(DecisionNode *node, int totalVars, partialInt *pi);
+void printSolution(DecisionNode *root, int totalVars, partialInt *pi, LIATheory *theory);
 void freeFormula(formula *f);
 void freeTree(DecisionNode *node);
 
-int main() {
+bool evaluateMathematicalConsistency(formula *f, partialInt *pi, LIATheory *theory);
+DecisionNode* solveSMT(formula *f, partialInt *pi, int currentVar, LIATheory *theory);
+void freeLIATheory(LIATheory *theory);
+LIATheory *initializeLIATheory();
 
+
+int main() {
     FILE *file = openFile();
     if (file == NULL) { return 1; }
 
-    formula *f = createFormulaCNF(file);
+    // 1. Inicializamos a Teoria AQUI no main
+    LIATheory *t = initializeLIATheory();
+    
+    // 2. Chamamos o leitor unificado. Ele preenche o 't' e nos devolve o 'f'
+    formula *f = createFormulaCNF(file, t);
     fclose(file);
 
-    if (f == NULL) { return 1; }
-    
-    printf("\nFormula lida (CNF)\n");
-    printFormula(f);
+    if (f == NULL) { 
+        freeLIATheory(t);
+        return 1; 
+    }
     
     partialInt pi = initializePartialInterp(f);
+    DecisionNode *root = NULL;
+ 
+    if (t->totalConstraints == 0) {
+        printf("[MODO SAT DETECTADO]\n");
+
+        printf("\nFormula lida (CNF)\n");
+        printClauses(f);
+
+        root = solveSAT(f, &pi, 1);
+    } else {
+        printf("[MODO SMT LIA DETECTADO] - %d equacoes carregadas.\n", t->totalConstraints);
+        root = solveSMT(f, &pi, 1, t);
+    }
 
     printf("\nProcessando a Arvore de Decisao...\n");
-    DecisionNode *root = solveSAT(f, &pi, 1);
-
-    printSolution(root, f->atomCount, &pi);
+    printSolution(root, f->atomCount, &pi, t);
 
     freeTree(root);
     freeFormula(f);
+    freeLIATheory(t);
     free(pi.truthValue);
 
     return 0;
@@ -116,8 +160,16 @@ formula *initializeFormula(){
     return newFormula;
 }
 
+LIATheory *initializeLIATheory() {
+    LIATheory *theory = (LIATheory *) malloc(sizeof(LIATheory));
+    theory->constraintListHead = NULL;
+    theory->totalConstraints = 0;
+    return theory;
+}
+
 // Faz a leitura da Fórmula a partir da entrada padrão
-formula* createFormulaCNF(FILE *file) {
+// Leitor Unificado (Máquina de Estados)
+formula* createFormulaCNF(FILE *file, LIATheory *theory) {
     int maxCommentSize = 128;
     char comment[maxCommentSize];
     char format[8];
@@ -133,30 +185,66 @@ formula* createFormulaCNF(FILE *file) {
 
             case 'p': 
                 fscanf(file, "%s %d %d", format, &inputFormula->atomCount, &inputFormula->clauseCount);
-                fgetc(file); // Limpa o '\n' do buffer
-
+                
                 if (strcmp(format, "cnf") != 0){
-                    printf("ERROR: Formato não suportado. Esperado 'cnf'.\n");
-                    free(inputFormula);
-                    return NULL;
-                }
-
-                // Passe o arquivo para a próxima função
-                if (formulaReader(inputFormula, file) == UNDEFINED){
-                    printf("ERROR: Erro na leitura das cláusulas. Verifique o formato.\n");
+                    printf("ERROR: Formato nao suportado. Esperado 'cnf'.\n");
                     freeFormula(inputFormula);
                     return NULL;
                 }
 
-                return inputFormula;
+                // Lê as cláusulas lógicas
+                if (formulaReader(inputFormula, file) == UNDEFINED){
+                    printf("ERROR: Erro na leitura das clausulas.\n");
+                    freeFormula(inputFormula);
+                    return NULL;
+                }
+                break;
+
+            case 't':
+                fscanf(file, "%s %d", format, &theory->totalConstraints);
+                
+                if (strcmp(format, "lia") != 0){
+                    printf("ERROR: Formato nao suportado. Esperado 'lia'.\n");
+                    freeFormula(inputFormula);
+                    return NULL;
+                }
+
+                // Lê as equações matemáticas (Substituindo o uso errado do formulaReader)
+                for (int i = 0; i < theory->totalConstraints; i++) {
+                    int atomID, coefficient, constantValue;
+                    char operatorSymbol[4]; 
+                    char mathVar;
+                    
+                    // Ele aceita tanto "f1 2x <= 10" quanto "f1 2 x <= 10" com espaço!
+                    int lidos = fscanf(file, " f%d %d %c %3s %d", &atomID, &coefficient, &mathVar, operatorSymbol, &constantValue);
+
+                    if (lidos != 5) {
+                        printf("ERROR: Erro de formatacao na equacao SMT.\n");
+                        freeFormula(inputFormula);
+                        return NULL;
+                    }
+
+                    LIAConstraint *newConstraint = (LIAConstraint *) malloc(sizeof(LIAConstraint));
+                    newConstraint->atomID = atomID;
+                    newConstraint->coefficient = coefficient;
+                    newConstraint->mathVar = mathVar;
+                    newConstraint->constantValue = constantValue;
+                    newConstraint->isUpperBound = (strcmp(operatorSymbol, "<=") == 0);
+                    
+                    newConstraint->next = theory->constraintListHead;
+                    theory->constraintListHead = newConstraint;
+                }
+                break;
 
             default:
                 printf("ERROR: Comando desconhecido '%c'.\n", command); 
-                free(inputFormula);
+                freeFormula(inputFormula);
                 return NULL;
         }
     }
-    return inputFormula;
+    
+    // Retorna a fórmula preenchida corretamente no final do laço!
+    return inputFormula; 
 }
 
 // Faz a leitura das clauses da formula, com base na informação do cabecalho
@@ -207,7 +295,7 @@ int clauseReader(clause *c, formula *f, FILE *file){
 
 
 // Imprimi a formula lida: (1 V ~2) ^ (2 V 3) ^ ... 
-void printFormula(formula *f){
+void printClauses(formula *f){
     clause *currentClause = f->clauseHead;
     while(currentClause != NULL){
         printf("(");
@@ -226,7 +314,6 @@ void printFormula(formula *f){
 
     printf("\n");
 }
-
 
 // Cria um array que armazena a interpretação parcial de cada variável única da  formula, inicializando todas como UNDEFINED
 partialInt initializePartialInterp(formula *f){
@@ -275,6 +362,87 @@ int evaluateFormula(formula *f, partialInt *pi) {
 
     if (allClausesTrue) { return 1; }
     else { return UNDEFINED; } // Ainda precisa descer mais na árvore
+}
+
+// Verifica se as equações ativadas pelo SAT Solver fazem sentido matematicamente
+bool evaluateMathematicalConsistency(formula *f, partialInt *pi, LIATheory *theory) {
+    Interval validRange;
+    validRange.minimumValue = INT_MIN; 
+    validRange.maximumValue = INT_MAX; 
+
+    LIAConstraint *currentConstraint = theory->constraintListHead;
+    
+    while (currentConstraint != NULL) {
+        if (currentConstraint->atomID <= f->atomCount && 
+            pi->truthValue[currentConstraint->atomID] == 1) {
+            
+            if (currentConstraint->isUpperBound) {
+                int calculatedLimit = currentConstraint->constantValue / currentConstraint->coefficient; 
+                if (calculatedLimit < validRange.maximumValue) { 
+                    validRange.maximumValue = calculatedLimit; 
+                }
+            } else {
+                int calculatedLimit = (currentConstraint->constantValue + currentConstraint->coefficient - 1) / currentConstraint->coefficient; 
+                if (calculatedLimit > validRange.minimumValue) { 
+                    validRange.minimumValue = calculatedLimit; 
+                }
+            }
+        }
+        currentConstraint = currentConstraint->next;
+    }
+
+    if (validRange.minimumValue > validRange.maximumValue) {
+        return false; 
+    }
+    return true; 
+}
+
+// Árvore de Decisão SMT (DPLL-T)
+DecisionNode* solveSMT(formula *f, partialInt *pi, int currentVar, LIATheory *theory) {
+    DecisionNode *node = malloc(sizeof(DecisionNode));
+    node->decisionAtomID = currentVar;
+    node->left = NULL;
+    node->right = NULL;
+
+    int booleanEvaluationResult = evaluateFormula(f, pi);
+
+    if (booleanEvaluationResult == 1) { 
+        bool isMathematicallyValid = evaluateMathematicalConsistency(f, pi, theory);
+        node->isSAT = isMathematicallyValid; 
+        return node; 
+    }
+ 
+    if (booleanEvaluationResult == 0) { 
+        node->isSAT = false;
+        return node;
+    }
+
+    if (currentVar > f->atomCount) {
+        node->isSAT = false;
+        return node;
+    }
+
+    pi->truthValue[currentVar] = 1; 
+    node->value = 1;
+    node->left = solveSMT(f, pi, currentVar + 1, theory);
+    
+    if (node->left->isSAT) {
+        node->isSAT = true;
+        return node; 
+    }
+
+    pi->truthValue[currentVar] = 0; 
+    node->value = 0;
+    node->right = solveSMT(f, pi, currentVar + 1, theory); 
+    
+    if (node->right->isSAT) {
+        node->isSAT = true;
+        return node;
+    }
+
+    pi->truthValue[currentVar] = UNDEFINED; 
+    node->isSAT = false;
+    return node;
 }
 
 // Função recursiva que monta a Árvore de Decisão usando Backtracking
@@ -333,22 +501,71 @@ DecisionNode* solveSAT(formula *f, partialInt *pi, int currentVar) {
     return node;
 }
 
-// Como usamos um array único, 'pi' já volta da árvore com a solução gravada nele.
-void printSolution(DecisionNode *root, int totalVars, partialInt *pi) {
+void printSolution(DecisionNode *root, int totalVars, partialInt *pi, LIATheory *theory) {
     if (root == NULL) return;
 
     if (!root->isSAT) {
         printf("\nResultado final: UNSAT\n");
-        printf("Nenhuma combinacao torna a formula verdadeira.\n");
+        printf("Nenhuma combinacao torna a formula verdadeira ou ha conflito matematico.\n");
     } else {
         printf("\nResultado final: SAT\n");
-        printf("Combinacao de Sucesso:\n");
-        for (int i = 1; i <= totalVars; i++) {
-            printf("Var x%d = %d\n", i, pi->truthValue[i]);
+
+        // Verifica se é modo SMT (tem equações carregadas)
+        if (theory != NULL && theory->totalConstraints > 0) {
+            printf("Equacoes LIA ativadas (Verdadeiras):\n");
+            
+            // Percorre a lista de equações e imprime as que são verdadeiras
+            LIAConstraint *current = theory->constraintListHead;
+            while (current != NULL) {
+                // Se a variável associada à equação for Verdadeira (1), imprime a equação
+                if (current->atomID <= totalVars && pi->truthValue[current->atomID] == 1) {
+                    printf("  %d%c %s %d\n", 
+                           current->coefficient, 
+                           current->mathVar, 
+                           current->isUpperBound ? "<=" : ">=", 
+                           current->constantValue);
+                }
+                current = current->next;
+            }
+
+            // Calcula e imprime o intervalo final da variável
+            Interval iv = { INT_MIN, INT_MAX };
+            LIAConstraint *c = theory->constraintListHead;
+            char v = (c != NULL) ? c->mathVar : 'x'; 
+            
+            while (c != NULL) {
+                if (c->atomID <= totalVars && pi->truthValue[c->atomID] == 1) {
+                    if (c->isUpperBound) {
+                        int lim = c->constantValue / c->coefficient;
+                        if (lim < iv.maximumValue) { iv.maximumValue = lim; }
+                    } else {
+                        int lim = (c->constantValue + c->coefficient - 1) / c->coefficient;
+                        if (lim > iv.minimumValue) { iv.minimumValue = lim; }
+                    }
+                }
+                c = c->next;
+            }
+
+            printf("\nSolucoes inteiras para '%c':\n", v);
+            if (iv.minimumValue == INT_MIN && iv.maximumValue == INT_MAX) {
+                printf("  '%c' pode ser qualquer numero inteiro (sem restricoes ativas).\n", v);
+            } else if (iv.minimumValue == INT_MIN) {
+                printf("  %c <= %d\n", v, iv.maximumValue);
+            } else if (iv.maximumValue == INT_MAX) {
+                printf("  %c >= %d\n", v, iv.minimumValue);
+            } else {
+                printf("  %d <= %c <= %d\n", iv.minimumValue, v, iv.maximumValue);
+            }
+
+        } else {
+            // Se for MODO SAT PURO, mantém o print tradicional
+            printf("Atribuicao Logica:\n");
+            for (int i = 1; i <= totalVars; i++) {
+                printf("  Var %d = %d\n", i, pi->truthValue[i]);
+            }
         }
     }
 }
-
 
 void freeFormula(formula *f) {
     if (f == NULL) return;
@@ -365,6 +582,17 @@ void freeFormula(formula *f) {
         currClause = nextClause;
     }
     free(f);
+}
+
+void freeLIATheory(LIATheory *theory) {
+    if (theory == NULL) return;
+    LIAConstraint *current = theory->constraintListHead;
+    while (current != NULL) {
+        LIAConstraint *next = current->next;
+        free(current);
+        current = next;
+    }
+    free(theory);
 }
 
 void freeTree(DecisionNode *node) {
