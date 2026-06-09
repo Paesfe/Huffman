@@ -97,8 +97,6 @@ void freeLIATheory(LIATheory *theory);
 
 
 
-
-
 int main() {
     FILE *file = openFile();
     if (file == NULL) { return 1; }
