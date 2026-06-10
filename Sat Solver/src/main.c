@@ -32,15 +32,12 @@ int main() {
  
     if (t->totalConstraints == 0) {
         printf("[MODO SAT DETECTADO]\n");
-        printf("\nFormula Booleana lida (CNF):\n");
         printBooleanFormulaCNF(f);
 
         root = solveSAT(f, &pi, 1);
     } else {
         printf("[MODO SMT LIA DETECTADO] - %d equacoes carregadas.\n", t->totalConstraints);
-        printf("\nFormula Booleana lida (CNF mapeada):\n");
         printBooleanFormulaCNF(f);
-        printf("\nRestricoes Matematicas Carregadas (LIA):\n");
         printLIATheoryConstraints(t);
         
         root = solveSMT(f, &pi, 1, t);

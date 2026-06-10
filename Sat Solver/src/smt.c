@@ -215,6 +215,8 @@ DecisionNode* solveSMT(Formula *f, PartialInterp *pi, int currentVar, LIATheory 
 
 // Imprime a lista de equações lineares inteiras (Teoria LIA) carregadas do arquivo
 void printLIATheoryConstraints(const LIATheory *theory) {
+    printf("\nRestricoes Matematicas Carregadas (LIA):\n");
+    
     LIAConstraint *current = theory->constraintListHead;
     if (current == NULL) {
         printf("Nenhuma equacao matematica carregada.\n");

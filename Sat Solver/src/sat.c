@@ -181,6 +181,8 @@ DecisionNode* solveSAT(Formula *f, PartialInterp *pi, int currentVar) {
 
 // Imprime a fórmula lógica no formato clássico de Conjunção de Disjunções (CNF)
 void printBooleanFormulaCNF(const Formula *f) {
+    printf("\nFormula Booleana lida:\n");
+    
     Clause *currentClause = f->clauseHead;
     while (currentClause != NULL) {
         printf("(");
