@@ -23,7 +23,6 @@ typedef struct LIAConstraint {
 // Guarda a lista de todas as equações matemáticas lidas do arquivo
 typedef struct LIATheory {
     LIAConstraint *constraintListHead; // Ponteiro para o início da lista de equações
-    LIAConstraint **lookupTable;
     int totalConstraints;              // Quantidade total de equações lidas
 } LIATheory;
 
@@ -34,31 +33,31 @@ typedef struct Interval {
 } Interval;
 
 // Lista encadeada para armazenar os literais de uma cláusula
-typedef struct literal {
-    struct literal *next;
+typedef struct Literal {
+    struct Literal *next;
     int atomID;             
     bool isNegative;        
-} literal;
+} Literal;
 
 // Lista encadeada para armazenar as cláusulas da fórmula
-typedef struct clause {
-    struct clause *next;   
-    literal *literalHead;   
+typedef struct Clause {
+    struct Clause *next;   
+    Literal *literalHead;   
     int literalCount;
-} clause;
+} Clause;
 
 // Estrutura principal da Fórmula
-typedef struct formula{
-    clause *clauseHead;         
+typedef struct Formula{
+    Clause *clauseHead;         
     int clauseCount;        
     int atomCount;
-} formula;
+} Formula;
 
 // Estrutura que guarda a interpretação atual
 // Undefined = -1; False = 0; True = 1
-typedef struct partialInt{
+typedef struct PartialInterp{
     short *truthValue; 
-} partialInt;
+} PartialInterp;
 
 // Estrutura da arvore de decisão
 typedef struct DecisionNode{
@@ -70,28 +69,28 @@ typedef struct DecisionNode{
 } DecisionNode;
 
 FILE *openFile();
-formula* readFile(FILE *file, LIATheory *theory);
+Formula* readFile(FILE *file, LIATheory *theory);
 
-formula *initializeFormula();
+Formula *initializeFormula();
 LIATheory *initializeLIATheory();
-partialInt initializePartialInterp(formula *f);
+PartialInterp initializePartialInterp(Formula *f);
 
-clause *addClause(formula *f);
-literal *addLiteral(literal *l, int variable, bool isNegative);
+Clause *addClause(Formula *f);
+Literal *addLiteral(Literal *l, int variable, bool isNegative);
 
-bool readClauses(formula *f, FILE *file);
-bool readEquations(formula *f, LIATheory* t, FILE *file);
-bool evaluateMathematicalConsistency(formula *f, partialInt *pi, LIATheory *theory);
-int evaluateFormula(formula *f, partialInt *pi);
+bool readClauses(Formula *f, FILE *file);
+bool readEquations(Formula *f, LIATheory* t, FILE *file);
+bool evaluateMathematicalConsistency(Formula *f, PartialInterp *pi, LIATheory *theory);
+int evaluateFormula(Formula *f, PartialInterp *pi);
 
-DecisionNode* solveSAT(formula *f, partialInt *pi, int currentVar);
-DecisionNode* solveSMT(formula *f, partialInt *pi, int currentVar, LIATheory *theory);
+DecisionNode* solveSAT(Formula *f, PartialInterp *pi, int currentVar);
+DecisionNode* solveSMT(Formula *f, PartialInterp *pi, int currentVar, LIATheory *theory);
 
-void printBooleanFormulaCNF(const formula *f);
+void printBooleanFormulaCNF(const Formula *f);
 void printLIATheoryConstraints(const LIATheory *theory);
-void printSolution(DecisionNode *root, int totalVars, partialInt *pi, LIATheory *theory);
+void printSolution(DecisionNode *root, int totalVars, PartialInterp *pi, LIATheory *theory);
 
-void freeFormula(formula *f);
+void freeFormula(Formula *f);
 void freeTree(DecisionNode *node);
 void freeLIATheory(LIATheory *theory);
 
@@ -104,7 +103,7 @@ int main() {
     LIATheory *t = initializeLIATheory();
     
     // Chamada do leitor unificado. Ele preenche o 't' e devolve o 'f'
-    formula *f = readFile(file, t);
+    Formula *f = readFile(file, t);
     fclose(file);
 
     if (f == NULL) { 
@@ -112,22 +111,19 @@ int main() {
         return 1; 
     }
     
-    partialInt pi = initializePartialInterp(f);
+    PartialInterp pi = initializePartialInterp(f);
     DecisionNode *root = NULL;
  
     if (t->totalConstraints == 0) {
         printf("[MODO SAT DETECTADO]\n");
-
         printf("\nFormula Booleana lida (CNF):\n");
         printBooleanFormulaCNF(f);
 
         root = solveSAT(f, &pi, 1);
     } else {
         printf("[MODO SMT LIA DETECTADO] - %d equacoes carregadas.\n", t->totalConstraints);
-        
         printf("\nFormula Booleana lida (CNF mapeada):\n");
         printBooleanFormulaCNF(f);
-
         printf("\nRestricoes Matematicas Carregadas (LIA):\n");
         printLIATheoryConstraints(t);
         
@@ -145,8 +141,13 @@ int main() {
     return 0;
 }
 
-formula *initializeFormula(){
-    formula *newFormula = (formula *) malloc(sizeof(formula));
+Formula *initializeFormula(){
+    Formula *newFormula = (Formula *) malloc(sizeof(Formula));
+    // Verifica a alocação do malloc
+    if (newFormula == NULL) {
+        fprintf(stderr, "ERRO: Falha ao alocar Formula.\n");
+        return NULL;
+    }
     newFormula->clauseHead = NULL;
     newFormula->clauseCount = 0;
     newFormula->atomCount = 0;
@@ -154,16 +155,27 @@ formula *initializeFormula(){
 }
 
 LIATheory *initializeLIATheory() {
-    LIATheory *theory = (LIATheory *) malloc(sizeof(LIATheory));
-    theory->constraintListHead = NULL;
-    theory->totalConstraints = 0;
-    return theory;
+    LIATheory *newTheory = (LIATheory *) malloc(sizeof(LIATheory));
+    // Verifica a alocação do malloc
+    if (newTheory == NULL) {
+        fprintf(stderr, "ERRO: Falha ao alocar Formula.\n");
+        return NULL;
+    }
+    newTheory->constraintListHead = NULL;
+    newTheory->totalConstraints = 0;
+    return newTheory;
 }
 
 // Cria um array que armazena a interpretação parcial de cada variável única da formula, inicializando todas como UNDEFINED
-partialInt initializePartialInterp(formula *f){
-    partialInt pi;
+PartialInterp initializePartialInterp(Formula *f){
+    PartialInterp pi;
     pi.truthValue = malloc(sizeof(short) * (f->atomCount + 1)); 
+    // Verifica a alocação do malloc
+    if (pi.truthValue == NULL) {
+        fprintf(stderr, "ERRO: Falha ao alocar PartialInterp.\n");
+        return pi;
+    }
+    
     for (int i = 0; i < f->atomCount + 1; i++) { pi.truthValue[i] = UNDEFINED; }
 
     return pi;
@@ -195,18 +207,18 @@ FILE *openFile() {
 }
 
 // Faz a leitura da Fórmula a partir do arquivo fornecido 
-formula* readFile(FILE *file, LIATheory *theory) {
-    int maxCommentSize = 128;
-    char comment[maxCommentSize];
+Formula* readFile(FILE *file, LIATheory *theory) {
+    char comment[128];
     char format[8];
     char command; 
 
-    formula *inputFormula = initializeFormula();
-    
+    Formula *inputFormula = initializeFormula();
+    if (inputFormula == NULL) return NULL;
+
     while(fscanf(file, " %c", &command) != EOF) {
         switch (command){
             case 'c': 
-                fgets(comment, maxCommentSize, file); 
+                fgets(comment, sizeof(comment), file); 
                 break;
 
             case 'p': 
@@ -249,27 +261,15 @@ formula* readFile(FILE *file, LIATheory *theory) {
                 return NULL;
         }
     }
-    
-    // Aloca a tabela de busca baseada no número de átomos/variáveis
-    if (inputFormula != NULL && theory != NULL) {
-        theory->lookupTable = (LIAConstraint **) calloc(inputFormula->atomCount + 1, sizeof(LIAConstraint *));
-        
-        // Popula a tabela mapeando atomID -> Ponteiro da Restrição
-        LIAConstraint *curr = theory->constraintListHead;
-        while (curr != NULL) {
-            if (curr->atomID <= inputFormula->atomCount) {
-                theory->lookupTable[curr->atomID] = curr;
-            }
-            curr = curr->next;
-        }
-    }
 
-    return inputFormula; 
+    return inputFormula;
 }
 
-bool readClauses(formula *f, FILE *file) {
+bool readClauses(Formula *f, FILE *file) {
     for (int i = 0; i < f->clauseCount; i++){
-        clause *newClause = addClause(f);
+        Clause *newClause = addClause(f);
+        if (newClause == NULL) return false;
+        
         while(1){
             int temp;
             if (fscanf(file, "%d", &temp) != 1 || abs(temp) > f->atomCount) { 
@@ -277,16 +277,18 @@ bool readClauses(formula *f, FILE *file) {
                 return false; // Informa o erro para quem chamou
             }
 
-            if (temp != 0) { newClause->literalHead = addLiteral(newClause->literalHead, abs(temp), (temp<0)); }
-            else { break; }
+            if (temp != 0) { 
+                newClause->literalHead = addLiteral(newClause->literalHead, abs(temp), (temp < 0));
+                newClause->literalCount++;
+            } else { break; }
 
             newClause->literalCount++;
         }
     }
-    return true; // Sucesso
+    return true;
 }
 
-bool readEquations(formula *f, LIATheory* t, FILE *file) {
+bool readEquations(Formula *f, LIATheory* t, FILE *file) {
     for (int i = 0; i < t->totalConstraints; i++) {
         int atomID, coefficient, constantValue;
         char mathVar;
@@ -318,54 +320,74 @@ bool readEquations(formula *f, LIATheory* t, FILE *file) {
             }
         }
 
+        // Rejeita coeficiente zero (causaria divisão por zero em calculateLIAInterval)
+        if (coefficient == 0) {
+            fprintf(stderr, "ERRO: Coeficiente zero na equacao: '%s'\n", buffer);
+            return false;
+        }
+
         LIAConstraint *newConstraint = (LIAConstraint *) malloc(sizeof(LIAConstraint));
-        if (newConstraint == NULL) return false;
+        // Verifica a alcação do malloc
+        if (newConstraint == NULL) {
+            fprintf(stderr, "ERRO: Falha ao alocar LIAConstraint.\n");
+            return false;
+        }
         
         newConstraint->atomID = atomID;
         newConstraint->coefficient = coefficient;
         newConstraint->mathVar = mathVar;
         newConstraint->innerSign = sign;
         newConstraint->innerOffset = offset;
-        strcpy(newConstraint->operatorSymbol, op);
         newConstraint->constantValue = target;
-        
+
+        strcpy(newConstraint->operatorSymbol, op);
+
         newConstraint->next = t->constraintListHead;
         t->constraintListHead = newConstraint;
     }
     return true;
 }
+
 // Cria uma clause vazia, e adiciona no início da lista encadeada de cláusulas
-clause *addClause(formula *f){
-    clause *newClause = malloc(sizeof(clause));
+Clause *addClause(Formula *f) {
+    Clause *newClause = (Clause *) malloc(sizeof(Clause));
+    // Verifica a alocação do malloc
+    if (newClause == NULL) {
+        fprintf(stderr, "ERRO: Falha ao alocar Clause.\n");
+        return NULL;
+    }
     newClause->literalCount = 0;
-    newClause->literalHead = NULL;
-    newClause->next = f->clauseHead;
-    f->clauseHead = newClause;
+    newClause->literalHead  = NULL;
+    newClause->next         = f->clauseHead;
+    f->clauseHead           = newClause;
     return newClause;
 }
 
 // Cria e preenche literal, colocando-o na lista encadeada de uma cláusula específica
-literal *addLiteral(literal *l, int variable, bool isNegative){
-    literal *newLiteral = (literal *)malloc(sizeof(literal));
-    newLiteral->atomID = variable;
+Literal *addLiteral(Literal *l, int variable, bool isNegative){
+    Literal *newLiteral = (Literal *)malloc(sizeof(Literal));
+    // Verifica a alocação do malloc
+    if (newLiteral == NULL) {
+        fprintf(stderr, "ERRO: Falha ao alocar Literal.\n");
+        return l; // retorna a lista anterior intacta
+    }
+
+    newLiteral->atomID     = variable;
     newLiteral->isNegative = isNegative;
-    newLiteral->next = l;
+    newLiteral->next       = l;
     return newLiteral;
 }
 
 
 // Imprime a fórmula lógica no formato clássico de Conjunção de Disjunções (CNF)
-void printBooleanFormulaCNF(const formula *f) {
-    clause *currentClause = f->clauseHead;
+void printBooleanFormulaCNF(const Formula *f) {
+    Clause *currentClause = f->clauseHead;
     while (currentClause != NULL) {
         printf("(");
-        literal *currentLiteral = currentClause->literalHead;
+        Literal *currentLiteral = currentClause->literalHead;
         while (currentLiteral != NULL) {
-            if (currentLiteral->isNegative) { 
-                printf("~%d", currentLiteral->atomID); 
-            } else { 
-                printf("%d", currentLiteral->atomID); 
-            }
+            if (currentLiteral->isNegative) { printf("~%d", currentLiteral->atomID); }
+            else { printf("%d", currentLiteral->atomID); }
 
             if (currentLiteral->next != NULL) { printf(" V "); }
             currentLiteral = currentLiteral->next;
@@ -393,88 +415,88 @@ void printLIATheoryConstraints(const LIATheory *theory) {
         if (current->innerSign == '+' || current->innerSign == '-') {
             printf(" %c %d", current->innerSign, current->innerOffset);
         }
-        
+    
         printf(" %s %d\n", current->operatorSymbol, current->constantValue);
         current = current->next;
     }
 }
 
 
-// operação de arredondamento pra baixo para inteiros
-int floor_div(int b, int a) {
-    int res = b / a;
-    int rem = b % a;
-    if (rem != 0 && b < 0) res--;
-    return res;
+// Arredonda para cima 
+int floorDiv(int dividend, int divisor) {
+    return dividend / divisor - (((dividend ^ divisor) < 0) && (dividend % divisor != 0));
 }
 
-// operação de arredondamento pra cima para inteiros
-int ceil_div(int b, int a) {
-    int res = b / a;
-    int rem = b % a;
-    if (rem != 0 && b > 0) res++;
-    return res;
+// Arredonda para baixo
+int ceilDiv(int dividend, int divisor) {
+    return dividend / divisor + (((dividend ^ divisor) > 0) && (dividend % divisor != 0));
+}
+// Inverte o operador relacional (negação booleana: ¬(ax OP b))
+static void negateOperator(char op[3]) {
+    if      (strcmp(op, "<=") == 0) strcpy(op, ">");
+    else if (strcmp(op, "<")  == 0) strcpy(op, ">=");
+    else if (strcmp(op, ">=") == 0) strcpy(op, "<");
+    else if (strcmp(op, ">")  == 0) strcpy(op, "<=");
 }
 
-Interval calculateLIAInterval(int totalVars, partialInt *pi, LIATheory *theory) {
-    Interval validRange;
-    validRange.minimumValue = INT_MIN; 
-    validRange.maximumValue = INT_MAX; 
+// Inverte o sentido do operador (multiplicação por -1 dos dois lados)
+static void invertOperator(char op[3]) {
+    if      (strcmp(op, "<=") == 0) strcpy(op, ">=");
+    else if (strcmp(op, "<")  == 0) strcpy(op, ">");
+    else if (strcmp(op, ">=") == 0) strcpy(op, "<=");
+    else if (strcmp(op, ">")  == 0) strcpy(op, "<");
+}
+
+
+
+Interval calculateLIAInterval(int totalVars, PartialInterp *pi, LIATheory *theory) {
+    Interval validRange = { INT_MIN, INT_MAX };
 
     LIAConstraint *currentConstraint = theory->constraintListHead;
     while (currentConstraint != NULL) {
-        int val = pi->truthValue[currentConstraint->atomID];
-
-        // Se a variável for UNDEFINED (-1), ignoramos pois o SAT ainda não tomou uma decisão sobre ela
-        if (val == 1 || val == 0) {
-            
+        short val = pi->truthValue[currentConstraint->atomID];
+        if (val != UNDEFINED) {
             int adjustedConstant = currentConstraint->constantValue;
+            char op[3];
+            strcpy(op, currentConstraint->operatorSymbol);
+
             if (currentConstraint->innerSign == '+') { adjustedConstant -= currentConstraint->innerOffset; } 
             else if (currentConstraint->innerSign == '-') { adjustedConstant += currentConstraint->innerOffset; }
 
             int a = currentConstraint->coefficient;
-            char op[3];
-            strcpy(op, currentConstraint->operatorSymbol);
+            
 
             //Tratamento caso a clausula booleana seja negativa 
-            if (val == 0) {
-                if (strcmp(op, "<=") == 0)      strcpy(op, ">");   // Negação de <= é >
-                else if (strcmp(op, "<") == 0)  strcpy(op, ">=");  // Negação de < é >=
-                else if (strcmp(op, ">=") == 0) strcpy(op, "<");   // Negação de >= é <
-                else if (strcmp(op, ">") == 0)  strcpy(op, "<=");  // Negação de > é <=
-            }
+            if (val == 0) { negateOperator(op); } 
 
             // Se 'a' for negativo, multiplicamos a inequação por -1, invertendo a inequação. ( '<' vira '>')
             if (a < 0) {
                 a = -a;
                 adjustedConstant = -adjustedConstant;
-                if (strcmp(op, "<=") == 0)      strcpy(op, ">=");
-                else if (strcmp(op, "<") == 0)  strcpy(op, ">");
-                else if (strcmp(op, ">=") == 0) strcpy(op, "<=");
-                else if (strcmp(op, ">") == 0)  strcpy(op, "<");
+                invertOperator(op);
             }
 
             // Adaptação dos operadores estritos (< e >) para seus equivalentes inclusivos (<= e >=).
-            // Usamos floor_div e ceil_div para garantir o arredondamento correto.
+            // Usamos floorDiv e ceilDiv para garantir o arredondamento correto.
 
             // Caso 1: ax <= b
             if (strcmp(op, "<=") == 0) {
-                int limit = floor_div(adjustedConstant, a);
+                int limit = floorDiv(adjustedConstant, a);
                 if (limit < validRange.maximumValue) validRange.maximumValue = limit;
             } 
             // Caso 2: ax < b
             else if (strcmp(op, "<") == 0) {
-                int limit = floor_div(adjustedConstant - 1, a);
+                int limit = floorDiv(adjustedConstant - 1, a);
                 if (limit < validRange.maximumValue) validRange.maximumValue = limit;
             } 
             // Caso 3: ax >= b
             else if (strcmp(op, ">=") == 0) {
-                int limit = ceil_div(adjustedConstant, a);
+                int limit = ceilDiv(adjustedConstant, a);
                 if (limit > validRange.minimumValue) validRange.minimumValue = limit;
             } 
             // Caso 4: ax > b
             else if (strcmp(op, ">") == 0) {
-                int limit = ceil_div(adjustedConstant + 1, a);
+                int limit = ceilDiv(adjustedConstant + 1, a);
                 if (limit > validRange.minimumValue) validRange.minimumValue = limit;
             }
         }
@@ -483,204 +505,208 @@ Interval calculateLIAInterval(int totalVars, partialInt *pi, LIATheory *theory) 
     return validRange;
 }
 
+
+bool evaluateMathematicalConsistency(Formula *f, PartialInterp *pi, LIATheory *theory) {
+    Interval validRange = calculateLIAInterval(f->atomCount, pi, theory);
+    return (validRange.minimumValue <= validRange.maximumValue);
+}
+
+
 // Verifica se a fórmula inteira é VERDADEIRA dada a interpretação atual
 // Retorna 1 (SAT), 0 (UNSAT) ou -1 (UNDEFINED)
-int evaluateFormula(formula *f, partialInt *pi) {
+int evaluateFormula(Formula *f, PartialInterp *pi) {
     bool allClausesTrue = true; // Verdade até que se prove o contrário
 
-    clause *currentClause = f->clauseHead;
+    Clause *currentClause = f->clauseHead;
     while (currentClause != NULL) {
         bool clauseIsTrue = false;
         bool clauseIsUndefined = false;
 
-        literal *currentLiteral = currentClause->literalHead;
-        
         // Percorre os literais dentro de uma cláusula específica
+        Literal *currentLiteral = currentClause->literalHead;
         while (currentLiteral != NULL) {
             short val = pi->truthValue[currentLiteral->atomID];
-            
-            if (val == UNDEFINED) { clauseIsUndefined = true; }
-            else {
-                // Checa (se a variável == 1 e NÃO for negada) OU (se a variável == 0 e FOR negada)
-                if ((val == 1 && !currentLiteral->isNegative) || (val == 0 && currentLiteral->isNegative)) {
+
+            if (val == UNDEFINED) {
+                clauseIsUndefined = true;
+            } else {
+                // Literal verdadeiro: (val==1 e não negado) OU (val==0 e negado)
+                if ((val == 1  && !currentLiteral->isNegative) ||
+                    (val == 0 &&  currentLiteral->isNegative)) {
                     clauseIsTrue = true;
-                    break; // Se achar 1 literal verdadeiro, a cláusula inteira já é verdadeira
+                    break;
                 }
             }
             currentLiteral = currentLiteral->next;
         }
 
-        // Se a clause é falsa e não possui literais indefinidos, a fórmula é definitivamente falsa
+        // Se a clause ainda não é verdadeira e possui literais indefinidos, é inclonclusivo
         if (!clauseIsTrue && !clauseIsUndefined) { return 0; }
         
-        // Se a clause ainda não é verdadeira e possui literais indefinidos, é inclonclusivo
+        // Se a clause é falsa e não possui literais indefinidos, a fórmula é definitivamente falsa
         if (!clauseIsTrue) { allClausesTrue = false; }
         
         currentClause = currentClause->next;
     }
 
-    if (allClausesTrue) { return 1; }
-    else { return UNDEFINED; } // Ainda precisa descer mais na árvore
-}
-
-bool evaluateMathematicalConsistency(formula *f, partialInt *pi, LIATheory *theory) {
-    Interval validRange = calculateLIAInterval(f->atomCount, pi, theory);
-    
-    if (validRange.minimumValue > validRange.maximumValue) {
-        return false; // Conflito matemático detectado
-    }
-    return true; 
+    return allClausesTrue ? true : UNDEFINED;
 }
 
 
-// Árvore de Decisão SMT Modificada para Consistência Incremental (Early Pruning)
-// Verifica se a atribuição lógica atual é matematicamente viável e não possui contradições.
-DecisionNode* solveSMT(formula *f, partialInt *pi, int currentVar, LIATheory *theory) {
-    DecisionNode *node = malloc(sizeof(DecisionNode));
-    node->decisionAtomID = currentVar;
-    node->left = NULL;
-    node->right = NULL;
-
-    int booleanEvaluationResult = evaluateFormula(f, pi);
-
-    if (booleanEvaluationResult == 1) { 
-        bool isMathematicallyValid = evaluateMathematicalConsistency(f, pi, theory);
-        node->isSAT = isMathematicallyValid; 
-        return node; 
+static DecisionNode *createDecisionNode(int atomID) {
+    DecisionNode *node = (DecisionNode *) malloc(sizeof(DecisionNode));
+    if (node == NULL) {
+        fprintf(stderr, "ERRO: Falha ao alocar DecisionNode.\n");
+        return NULL;
     }
- 
-    if (booleanEvaluationResult == 0) { 
-        node->isSAT = false;
-        return node;
-    }
-
-    // 1. Tenta ramo VERDADEIRO (1)
-    pi->truthValue[currentVar] = 1; 
-    node->value = 1;
-    
-    // Só desce na recursão se o estado atual for matematicamente consistente
-    if (evaluateMathematicalConsistency(f, pi, theory)) {
-        node->left = solveSMT(f, pi, currentVar + 1, theory);
-        if (node->left->isSAT) {
-            node->isSAT = true;
-            return node; 
-        }
-    }
-
-    // Tenta ramo FALSO (0)
-    pi->truthValue[currentVar] = 0; 
-    node->value = 0;
-    
-    // Só desce na recursão se o estado atual for matematicamente consistente
-    if (evaluateMathematicalConsistency(f, pi, theory)) {
-        node->right = solveSMT(f, pi, currentVar + 1, theory); 
-        if (node->right->isSAT) {
-            node->isSAT = true;
-            return node;
-        }
-    }
-
-    // Se chegou aqui, ambos os lados falharem (ou forem inconsistentes), limpa e retorna UNSAT para este nó
-    pi->truthValue[currentVar] = UNDEFINED; 
-    node->isSAT = false;
+    node->decisionAtomID = atomID;
+    node->value          = 0;
+    node->left           = NULL;
+    node->right          = NULL;
+    node->isSAT          = false;
     return node;
 }
 
+
 // Árvore de Decisão Recurrsiva, resolve o SAT usando Backtracking
-DecisionNode* solveSAT(formula *f, partialInt *pi, int currentVar) {
-    //Cria a raiz da árvore de decisão
-    DecisionNode *node = malloc(sizeof(DecisionNode));
-    node->decisionAtomID = currentVar;
-    node->left = NULL;
-    node->right = NULL;
+DecisionNode* solveSAT(Formula *f, PartialInterp *pi, int currentVar) {
+    // Cria o nó raiz da Arvore de decisão
+    DecisionNode *node = createDecisionNode(currentVar);
+    if (node == NULL) return NULL;
 
-    //Avalia o estado da fórmula com os chutes atuais
-    int evaluationResult = evaluateFormula(f, pi);
-
-    if (evaluationResult == 1) { 
-        node->isSAT = true;
-        return node;
-    }
- 
-    if (evaluationResult == 0) { 
+    if (currentVar > f->atomCount) {
         node->isSAT = false;
         return node;
     }
+ 
+    int result = evaluateFormula(f, pi);
+    if (result == 1)  { node->isSAT = true;  return node; }
+    if (result == 0)  { node->isSAT = false; return node; }
 
     //Ramificação(BACKTRACKING))
     // Ramo com variável VERDADEIRA (1)
-    pi->truthValue[currentVar] = 1; // Modifica o array global diretamente
-    node->value = 1;
+    pi->truthValue[currentVar] = true; // Modifica o array global diretamente
+    node->value = true;
     node->left = solveSAT(f, pi, currentVar + 1);
     
-    if (node->left->isSAT) {
+    if (node->left != NULL && node->left->isSAT) {
         node->isSAT = true;
         return node; // Achou SAT, sobe sem desfazer a modificação.
     }
 
     // Se o caminho 1 falhou, tentamos o ramo com a variável FALSA (0)
-    pi->truthValue[currentVar] = 0; // SOBRESCREVE A MODIFICAÇÃO ANTERIOR
-    node->value = 0;
-    node->right = solveSAT(f, pi, currentVar + 1); 
-    
-    if (node->right->isSAT) {
+    pi->truthValue[currentVar] = false;
+    node->value = false;
+    node->right = solveSAT(f, pi, currentVar + 1);
+
+    if (node->right != NULL && node->right->isSAT) {
         node->isSAT = true;
-        return node;
+        return node; // Achou SAT, sobe sem desfazer a modificação.
     }
 
-    // Se chegou aqui, AMBOS falharam
-    // Desfaz a alteração feita, para que o nó pai receba receba o array no estado original
-    pi->truthValue[currentVar] = UNDEFINED; 
-
+    // Se chegou aqui, ambos falharam: desfaz a atribuição e sinaliza UNSAT
+    pi->truthValue[currentVar] = UNDEFINED;
     node->isSAT = false;
     return node;
 }
 
-void printSolution(DecisionNode *root, int totalVars, partialInt *pi, LIATheory *theory) {
+
+// Árvore de Decisão SMT Modificada para Consistência Incremental (Early Pruning)
+// Verifica se a atribuição lógica atual é matematicamente viável e não possui contradições.
+DecisionNode* solveSMT(Formula *f, PartialInterp *pi, int currentVar, LIATheory *theory) {
+    DecisionNode *node = createDecisionNode(currentVar);
+    if (node == NULL) return NULL;
+    
+    int booleanEvaluationResult = evaluateFormula(f, pi);
+
+    if (booleanEvaluationResult == true) { 
+        // Fórmula booleana satisfeita: verifica consistência matemática
+        node->isSAT = evaluateMathematicalConsistency(f, pi, theory);
+        return node; 
+    }
+ 
+    if (booleanEvaluationResult == false) { 
+        node->isSAT = false;
+        return node;
+    }
+
+    // Backtracking
+    // Ramo Verdadeiro (1)
+    pi->truthValue[currentVar] = true; 
+    node->value = true;
+    
+    // Só desce na recursão se o estado atual for matematicamente consistente
+    if (evaluateMathematicalConsistency(f, pi, theory)) {
+        node->left = solveSMT(f, pi, currentVar + 1, theory);
+        if (node->left != NULL && node->left->isSAT) {
+            node->isSAT = true;
+            return node;
+        }
+    }
+
+    // Ramo FALSO (0)
+    pi->truthValue[currentVar] = 0; 
+    node->value = 0;
+    
+    // Só desce na recursão se o estado atual for matematicamente consistente
+    if (evaluateMathematicalConsistency(f, pi, theory)) {
+        node->right = solveSMT(f, pi, currentVar + 1, theory);
+        if (node->right != NULL && node->right->isSAT) {
+            node->isSAT = true;
+            return node;
+        }
+    }
+
+    // Se chegou aqui, ambos falharam: desfaz a atribuição e sinaliza UNSAT
+    pi->truthValue[currentVar] = UNDEFINED;
+    node->isSAT = false;
+    return node;
+}
+
+
+void printSolution(DecisionNode *root, int totalVars, PartialInterp *pi, LIATheory *theory) {
     if (root == NULL) return;
 
     if (!root->isSAT) {
         printf("\nResultado final: UNSAT\n");
         printf("Nenhuma combinacao torna a formula verdadeira ou ha conflito matematico.\n");
+        return;
+    } 
+    
+    printf("\nResultado final: SAT\n");
+
+    // Checagem para o tipo de saida, é SMT ou é SAT?
+    if (theory != NULL && theory->totalConstraints > 0) {
+        // Invoca a função centralizada corrigida para obter o intervalo final
+        Interval iv = calculateLIAInterval(totalVars, pi, theory);
+        char v = (theory->constraintListHead != NULL) ? theory->constraintListHead->mathVar : 'x'; 
+        
+        printf("\nSolucoes inteiras para '%c':\n", v);
+
+        if (iv.minimumValue == INT_MIN && iv.maximumValue == INT_MAX) { printf("'%c' pode ser qualquer numero inteiro.\n", v); }
+        else if (iv.minimumValue == INT_MIN) { printf("%c <= %d\n", v, iv.maximumValue); }
+        else if (iv.maximumValue == INT_MAX) { printf("%c >= %d\n", v, iv.minimumValue); }
+        else { printf("%d <= %c <= %d\n", iv.minimumValue, v, iv.maximumValue); } 
+
     } else {
-        printf("\nResultado final: SAT\n");
-
-        if (theory != NULL && theory->totalConstraints > 0) {
-
-            // Invoca a função centralizada corrigida para obter o intervalo final
-            Interval iv = calculateLIAInterval(totalVars, pi, theory);
-            char v = (theory->constraintListHead != NULL) ? theory->constraintListHead->mathVar : 'x'; 
-            
-            printf("\nSolucoes inteiras para '%c':\n", v);
-            if (iv.minimumValue == INT_MIN && iv.maximumValue == INT_MAX) {
-                printf("'%c' pode ser qualquer numero inteiro (sem restricoes ativas).\n", v);
-            } else if (iv.minimumValue == INT_MIN) {
-                printf("%c <= %d\n", v, iv.maximumValue);
-            } else if (iv.maximumValue == INT_MAX) {
-                printf("%c >= %d\n", v, iv.minimumValue);
-            } else {
-                printf("%d <= %c <= %d\n", iv.minimumValue, v, iv.maximumValue);
-            }
-
-        } else {
-            printf("Atribuicao Logica:\n");
-            for (int i = 1; i <= totalVars; i++) {
-                printf("  Var %d = %d\n", i, pi->truthValue[i]);
-            }
+        printf("Atribuicao Logica:\n");
+        for (int i = 1; i <= totalVars; i++) {
+            printf("  Var %d = %d\n", i, pi->truthValue[i]);
         }
-    }
+    } 
 }
 
 
+
 // Gestores de armazenamento
-void freeFormula(formula *f) {
+void freeFormula(Formula *f) {
     if (f == NULL) return;
-    clause *currClause = f->clauseHead;
+    Clause *currClause = f->clauseHead;
     while (currClause != NULL) {
-        clause *nextClause = currClause->next;
-        literal *currLiteral = currClause->literalHead;
+        Clause *nextClause = currClause->next;
+        Literal *currLiteral = currClause->literalHead;
         while (currLiteral != NULL) {
-            literal *nextLiteral = currLiteral->next;
+            Literal *nextLiteral = currLiteral->next;
             free(currLiteral);
             currLiteral = nextLiteral;
         }
@@ -698,15 +724,13 @@ void freeLIATheory(LIATheory *theory) {
         free(current);
         current = next;
     }
-    if (theory->lookupTable != NULL) { free(theory->lookupTable); }
+
     free(theory);
 }
 
 void freeTree(DecisionNode *node) {
     if (node == NULL) return;
-    
     freeTree(node->left);
     freeTree(node->right);
-    
     free(node);
 }
