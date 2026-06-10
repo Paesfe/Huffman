@@ -1,0 +1,5 @@
+c Caso de teste com literal booleano negado: x > 5
+p cnf 1 1
+-1 0
+t lia 1
+f1 1 x <= 5
