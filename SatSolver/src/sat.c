@@ -15,7 +15,7 @@ Formula *initializeFormula(){
     return newFormula;
 }
 
-// Cria um array que armazena a interpretação parcial de cada variável única da formula, inicializando todas como UNDEFINED
+// Cria a matriz de interpretação, inicializando cada variavel Booleana da Formula como UNDERFINED (-1) 
 PartialInterp initializePartialInterp(Formula *f){
     PartialInterp pi;
     pi.truthValue = malloc(sizeof(short) * (f->atomCount + 1)); 
@@ -60,6 +60,7 @@ Literal *addLiteral(Literal *l, int variable, bool isNegative){
     return newLiteral;
 }
 
+// Faz a leitura da Clausulas que compoem a Formula
 bool readClauses(Formula *f, FILE *file) {
     for (int i = 0; i < f->clauseCount; i++){
         Clause *newClause = addClause(f);
@@ -72,11 +73,10 @@ bool readClauses(Formula *f, FILE *file) {
                 return false; // Informa o erro para quem chamou
             }
 
-            if (temp != 0) { 
-                newClause->literalHead = addLiteral(newClause->literalHead, abs(temp), (temp < 0));
-                newClause->literalCount++;
-            } else { break; }
-
+            // '0' é indicador do fim da Clausula
+            if (temp != 0) { newClause->literalHead = addLiteral(newClause->literalHead, abs(temp), (temp < 0)); }
+            else { break; }
+            
             newClause->literalCount++;
         }
     }
@@ -86,7 +86,7 @@ bool readClauses(Formula *f, FILE *file) {
 // Verifica se a fórmula inteira é VERDADEIRA dada a interpretação atual
 // Retorna 1 (SAT), 0 (UNSAT) ou -1 (UNDEFINED)
 int evaluateFormula(Formula *f, PartialInterp *pi) {
-    bool allClausesTrue = true; // Verdade até que se prove o contrário
+    bool hasUndefinedClauses = false; // Checa se o resultado daa formula depende de uma variavél que ainda não teve valor definido
 
     Clause *currentClause = f->clauseHead;
     while (currentClause != NULL) {
@@ -98,29 +98,35 @@ int evaluateFormula(Formula *f, PartialInterp *pi) {
         while (currentLiteral != NULL) {
             short val = pi->truthValue[currentLiteral->atomID];
 
-            if (val == UNDEFINED) {
-                clauseIsUndefined = true;
-            } else {
+            if (val == UNDEFINED) { clauseIsUndefined = true; }
+            else {
                 // Literal verdadeiro: (val==1 e não negado) OU (val==0 e negado)
-                if ((val == 1  && !currentLiteral->isNegative) ||
-                    (val == 0 &&  currentLiteral->isNegative)) {
+                if ((val == 1  && !currentLiteral->isNegative) || (val == 0 &&  currentLiteral->isNegative)) {
                     clauseIsTrue = true;
                     break;
                 }
             }
+
             currentLiteral = currentLiteral->next;
         }
 
-        // Se a clause ainda não é verdadeira e possui literais indefinidos, é inclonclusivo
-        if (!clauseIsTrue && !clauseIsUndefined) { return 0; }
-        
-        // Se a clause é falsa e não possui literais indefinidos, a fórmula é definitivamente falsa
-        if (!clauseIsTrue) { allClausesTrue = false; }
+        // Se a cláusula NÃO é verdadeira...
+        if (!clauseIsTrue) {
+            // ...e NÃO possui literais indefinidos, ela é 100% FALSA
+            // Se uma cláusula é falsa, a fórmula inteira é falsa
+            if (!clauseIsUndefined) { return false; } 
+            // ...mas possui literais indefinidos, ela está aberta/inconclusiva por enquanto
+            else { hasUndefinedClauses = true; }
+        }
         
         currentClause = currentClause->next;
     }
 
-    return allClausesTrue ? true : UNDEFINED;
+    // Se nenhuma Clausula for completamente falsa e existir alguma que ficou indefinida, a formula inteira está UNDEFINED
+    if (hasUndefinedClauses) { return UNDEFINED; }
+
+    // Se chegou aqui, todas as Clausulas são verdadeiras
+    return true;
 }
 
 DecisionNode *createDecisionNode(int atomID) {
@@ -130,7 +136,7 @@ DecisionNode *createDecisionNode(int atomID) {
         return NULL;
     }
     node->decisionAtomID = atomID;
-    node->value          = 0;
+    node->polarity       = 0;
     node->left           = NULL;
     node->right          = NULL;
     node->isSAT          = false;
@@ -143,10 +149,8 @@ DecisionNode* solveSAT(Formula *f, PartialInterp *pi, int currentVar) {
     DecisionNode *node = createDecisionNode(currentVar);
     if (node == NULL) return NULL;
 
-    if (currentVar > f->atomCount) {
-        node->isSAT = false;
-        return node;
-    }
+    // Medida de proteção contra estouro de índice
+    if (currentVar > f->atomCount) { return NULL; }
  
     int result = evaluateFormula(f, pi);
     if (result == 1)  { node->isSAT = true;  return node; }
@@ -155,20 +159,20 @@ DecisionNode* solveSAT(Formula *f, PartialInterp *pi, int currentVar) {
     //Ramificação(BACKTRACKING))
     // Ramo com variável VERDADEIRA (1)
     pi->truthValue[currentVar] = true; // Modifica o array global diretamente
-    node->value = true;
-    node->left = solveSAT(f, pi, currentVar + 1);
+    node->polarity = true;
+    node->left = solveSAT(f, pi, currentVar + 1); // Recurssão
     
-    if (node->left != NULL && node->left->isSAT) {
+    if (evaluateFormula(f, pi) == 1 || node->left != NULL && node->left->isSAT ) {
         node->isSAT = true;
         return node; // Achou SAT, sobe sem desfazer a modificação.
     }
 
     // Se o caminho 1 falhou, tentamos o ramo com a variável FALSA (0)
     pi->truthValue[currentVar] = false;
-    node->value = false;
-    node->right = solveSAT(f, pi, currentVar + 1);
+    node->polarity = false;
+    node->right = solveSAT(f, pi, currentVar + 1); // Recurssão
 
-    if (node->right != NULL && node->right->isSAT) {
+    if (evaluateFormula(f, pi) == 1 || node->right != NULL && node->right->isSAT ) {
         node->isSAT = true;
         return node; // Achou SAT, sobe sem desfazer a modificação.
     }
@@ -179,7 +183,7 @@ DecisionNode* solveSAT(Formula *f, PartialInterp *pi, int currentVar) {
     return node;
 }
 
-// Imprime a fórmula lógica no formato clássico de Conjunção de Disjunções (CNF)
+// Imprime a fórmula lógica: (~1 v 2) ^ (1 v ~3)...
 void printBooleanFormulaCNF(const Formula *f) {
     Clause *currentClause = f->clauseHead;
     while (currentClause != NULL) {

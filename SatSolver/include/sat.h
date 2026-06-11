@@ -6,43 +6,44 @@
 
 #define UNDEFINED -1
 
-// Lista encadeada para armazenar os literais de uma cláusula
+// Estrutura SAT
+// Lista de Literais de uma Clausula 
 typedef struct Literal {
     struct Literal *next;
     int atomID;             
     bool isNegative;        
 } Literal;
 
-// Lista encadeada para armazenar as cláusulas da fórmula
+// Lista de Clausulas de uma Formula
 typedef struct Clause {
     struct Clause *next;   
     Literal *literalHead;   
     int literalCount;
 } Clause;
 
-// Estrutura principal da Fórmula
-typedef struct Formula{
+// Estrutura da Fórmula
+typedef struct Formula {
     Clause *clauseHead;         
     int clauseCount;        
     int atomCount;
 } Formula;
 
-// Estrutura que guarda a interpretação atual
+// Estrutura que guarda a interpretação atual de uma variavel
 // Undefined = -1; False = 0; True = 1
-typedef struct PartialInterp{
+typedef struct PartialInterp {
     short *truthValue; 
 } PartialInterp;
 
-// Estrutura da arvore de decisão
-typedef struct DecisionNode{
-    int decisionAtomID;                    // Qual variável este nó está testando
-    short value;                           // (0 ou 1)
-    struct DecisionNode *left;             // Ramo positivo (True)
-    struct DecisionNode *right;            // Ramo negativo (False)
-    bool isSAT;                            // Se o caminho resultou em SAT ou UNSAT
+// Estruturaa do nó da árvore de decisão
+typedef struct DecisionNode {
+    bool isSAT;                     //Indica o resultado do caminho (SAT ou UNSAT)
+    int decisionAtomID;             //ID da Variável Booleana
+    short polarity;                 //Valor Booleano Atribuido ao nó (TRUE ou FALSE)
+    struct DecisionNode *left;      //Ramo Posittivo (TRUE)
+    struct DecisionNode *right;     //Ramo Negativo (FALSE)
 } DecisionNode;
 
-// Protótipos das funções do módulo SAT
+// Protótipos SAT
 Formula *initializeFormula();
 PartialInterp initializePartialInterp(Formula *f);
 Clause *addClause(Formula *f);

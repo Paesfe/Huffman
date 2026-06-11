@@ -2,14 +2,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
-#include "../include/smt.h" // Automaticamente inclui sat.h
 
-
+#include "../include/smt.h" 
 
 FILE *openFile();
 Formula* readFile(FILE *file, LIATheory *theory);
 void printSolution(DecisionNode *root, int totalVars, PartialInterp *pi, LIATheory *theory);
-
 
 
 int main() {
@@ -27,9 +25,11 @@ int main() {
         return 1; 
     }
     
+    // Cria a matriz de interpretação, inicializando cada variavel Booleana como UNDERFINED (-1) 
     PartialInterp pi = initializePartialInterp(f);
     DecisionNode *root = NULL;
- 
+    
+    // Identifica o modo execução. (Num de equações == 0) ?  Modo SAT : Modo SMT
     if (t->totalConstraints == 0) {
         printf("[MODO SAT DETECTADO]\n");
         printf("\nFormula Booleana lida (CNF):\n");
