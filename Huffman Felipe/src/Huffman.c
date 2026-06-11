@@ -1,12 +1,8 @@
-/*
-    Desenvolver bibliotecas locais
-    #include <../include/compresser.h>
-    #include <../include/descompresser.h>
-    #include <../include/reader.h>
-*/
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "../include/compresser.h"
+#include "../include/descompresser.h"
 
 #define PATH_SIZE 256
 
@@ -15,16 +11,17 @@ void startCompress();
 void startDecompress();
 void getPath(char *filePath, int size);
 
-//Place Holder
-void CompressFile(const char* filePath);
-void DecompressFile(const char* filePath);
-
 int main(){
     while(1){
         displayMenu();
 
         int CommandInput;
-        scanf("%d", &CommandInput);
+        if (scanf("%d", &CommandInput) != 1) {
+            // Limpa o buffer em caso de input inválido não numérico
+            while (getchar() != '\n');
+            printf("Invalid input, try again!\n");
+            continue;
+        }
         
         switch (CommandInput){
             case 1:
@@ -43,6 +40,7 @@ int main(){
                 break;
         }
     }
+    return 0;
 }
 
 void displayMenu() {
@@ -74,13 +72,19 @@ void startDecompress() {
 
 void getPath(char *filePath, int size) {    
     int c;
+    // Limpa o buffer de entrada residual
     while ((c = getchar()) != '\n' && c != EOF); 
 
-    fgets(filePath, size, stdin);
-    
+    // Lê a linha digitada pelo usuário
+    if (fgets(filePath, size, stdin) == NULL) return;
     filePath[strcspn(filePath, "\n")] = '\0';
-}
 
-//Place Holder
-void CompressFile(const char* filePath){}
-void DecompressFile(const char* filePath){}
+    // Remove as aspas, caso existam
+    int len = strlen(filePath);
+    if (len >= 2 && filePath[0] == '"' && filePath[len - 1] == '"') {
+        // Elimina a primeira aspa, ao mover os caracteres 1 para a esquerda
+        memmove(filePath, filePath + 1, len - 2);
+        // Defina a última aspas como termino de string
+        filePath[len - 2] = '\0';
+    }
+}
