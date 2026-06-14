@@ -1,5 +1,5 @@
 Nesta pasta, estarão todos os arquivos necessários para a execução e estudo do SAT e SMT.
-Em "sat.c", está o código exclusivo para execução do SAT Solver no padrão DIMACS, usando arquivos com a extensão ".csv".
+Em "sat.c", está o código exclusivo para execução do SAT Solver no padrão DIMACS, usando arquivos com a extensão ".cnf".
 Em "smt.c" está o código exclusivo para execução do SMT Solver no padrão próprio.
 Para criar um arquivo que seja lido corretamente pelo SMT, o arquivo deve estar nesse padrão:
 
