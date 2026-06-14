@@ -105,7 +105,7 @@ static void invertOperator(char op[3]) {
 }
 
 // Calcula o intervalo válido para a variavel, considerando as clausulas e equações informadas
-Interval calculateLIAInterval(int totalVars, PartialInterp *pi, LIATheory *theory) {
+Interval calculateLIAInterval(DecisionNode *leaf, LIATheory *theory) {
     Interval validRange = { INT_MIN, INT_MAX };
 
     LIAConstraint *currentConstraint = theory->constraintListHead;
@@ -113,7 +113,7 @@ Interval calculateLIAInterval(int totalVars, PartialInterp *pi, LIATheory *theor
     //Percorre toda a lista de equações matemáticas 
     while (currentConstraint != NULL) {
         // Acessa o valor Booleano da Variavel/ID associado a uma equação
-        short val = pi->truthValue[currentConstraint->atomID];
+        short val = getVarValue(leaf, currentConstraint->atomID);
 
         // Só processa a equação caso a varivel tenha um valor booleano definnido (0 ou 1)
         if (val != UNDEFINED) {
@@ -172,40 +172,41 @@ Interval calculateLIAInterval(int totalVars, PartialInterp *pi, LIATheory *theor
 }
 
 // Verifica se o intervalo atual é válido
-bool evaluateMathematicalConsistency(Formula *f, PartialInterp *pi, LIATheory *theory) {
-    Interval validRange = calculateLIAInterval(f->atomCount, pi, theory);
+bool evaluateMathematicalConsistency(DecisionNode *leaf, LIATheory *theory) {
+    Interval validRange = calculateLIAInterval(leaf, theory);
     return (validRange.minimumValue <= validRange.maximumValue);
 }
 
 // Árvore de Decisão Recursiva com Backtracking.
 // Combina a busca booleana (SAT) com a validação da teoria matemática (LIA).
-DecisionNode* solveSMT(Formula *f, PartialInterp *pi, int currentVar, LIATheory *theory) {
-    DecisionNode *node = createDecisionNode(currentVar);
-    if (node == NULL) return NULL;
-    
+DecisionNode* solveSMT(Formula *f, int currentVar, DecisionNode *parent, LIATheory *theory) {
     // Primeiro Checa o SAT
-    int booleanEvaluationResult = evaluateFormula(f, pi);
+    int booleanEvaluationResult = evaluateFormula(f, parent);
 
     if (booleanEvaluationResult == true) { 
-        // Fórmula booleana satisfeita: agora verifica consistência matemática
         // Para um SMT ser SAT, uma Interpretação Parcial tem que gerar um intervalo matemáticamente consistente
-        node->isSAT = evaluateMathematicalConsistency(f, pi, theory);
-        return node; 
+        DecisionNode *leaf = createDecisionNode(currentVar, parent);
+        if (leaf == NULL) return NULL;
+        leaf->isSAT = evaluateMathematicalConsistency(parent, theory);
+        return leaf; 
     }
  
     if (booleanEvaluationResult == false) { 
-        node->isSAT = false;
-        return node;
+        DecisionNode *leaf = createDecisionNode(currentVar, parent);
+        if (leaf) leaf->isSAT = false;
+        return leaf;
     }
 
     // Ramificação
+    DecisionNode *node = createDecisionNode(currentVar, parent);
+    if (node == NULL) return NULL;
+
     // Ramo Verdadeiro (1)
-    pi->truthValue[currentVar] = true; 
     node->polarity = true;
     
     // Só desce na recursão se o estado atual for matematicamente consistente
-    if (evaluateMathematicalConsistency(f, pi, theory)) {
-        node->left = solveSMT(f, pi, currentVar + 1, theory);
+    if (evaluateMathematicalConsistency(node, theory)) {
+        node->left = solveSMT(f, currentVar + 1, node, theory);
         if (node->left != NULL && node->left->isSAT) {
             node->isSAT = true;
             return node;
@@ -213,12 +214,11 @@ DecisionNode* solveSMT(Formula *f, PartialInterp *pi, int currentVar, LIATheory 
     }
 
     // Ramo FALSO (0)
-    pi->truthValue[currentVar] = 0; 
     node->polarity = 0;
     
     // Só desce na recursão se o estado atual for matematicamente consistente
-    if (evaluateMathematicalConsistency(f, pi, theory)) {
-        node->right = solveSMT(f, pi, currentVar + 1, theory);
+    if (evaluateMathematicalConsistency(node, theory)) {
+        node->right = solveSMT(f, currentVar + 1, node, theory);
         if (node->right != NULL && node->right->isSAT) {
             node->isSAT = true;
             return node;
@@ -227,7 +227,7 @@ DecisionNode* solveSMT(Formula *f, PartialInterp *pi, int currentVar, LIATheory 
 
     // Se chegou aqui, ambos falharam matematicamente ou booleanamente
     // Reseta a atribuição para UNDEFINED e sinaliza o nó como UNSAT
-    pi->truthValue[currentVar] = UNDEFINED;
+    node->polarity = UNDEFINED;
     node->isSAT = false;
     return node;
 }

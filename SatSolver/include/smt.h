@@ -32,9 +32,9 @@ LIATheory *initializeLIATheory();
 bool readEquations(Formula *f, LIATheory* t, FILE *file);
 int floorDiv(int dividend, int divisor);
 int ceilDiv(int dividend, int divisor);
-Interval calculateLIAInterval(int totalVars, PartialInterp *pi, LIATheory *theory);
-bool evaluateMathematicalConsistency(Formula *f, PartialInterp *pi, LIATheory *theory);
-DecisionNode* solveSMT(Formula *f, PartialInterp *pi, int currentVar, LIATheory *theory);
+Interval calculateLIAInterval(DecisionNode *leaf, LIATheory *theory);
+bool evaluateMathematicalConsistency(DecisionNode *leaf, LIATheory *theory);
+DecisionNode *solveSMT(Formula *f, int currentVar, DecisionNode *parent, LIATheory *theory);
 void printLIATheoryConstraints(const LIATheory *theory);
 void freeLIATheory(LIATheory *theory);
 

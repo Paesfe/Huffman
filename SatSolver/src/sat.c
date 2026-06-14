@@ -15,21 +15,6 @@ Formula *initializeFormula(){
     return newFormula;
 }
 
-// Cria a matriz de interpretação, inicializando cada variavel Booleana da Formula como UNDERFINED (-1) 
-PartialInterp initializePartialInterp(Formula *f){
-    PartialInterp pi;
-    pi.truthValue = malloc(sizeof(short) * (f->atomCount + 1)); 
-    // Verifica a alocação do malloc
-    if (pi.truthValue == NULL) {
-        fprintf(stderr, "ERRO: Falha ao alocar PartialInterp.\n");
-        return pi;
-    }
-    
-    for (int i = 0; i < f->atomCount + 1; i++) { pi.truthValue[i] = UNDEFINED; }
-
-    return pi;
-}
-
 // Cria uma clause vazia, e adiciona no início da lista encadeada de cláusulas
 Clause *addClause(Formula *f) {
     Clause *newClause = (Clause *) malloc(sizeof(Clause));
@@ -83,10 +68,19 @@ bool readClauses(Formula *f, FILE *file) {
     return true;
 }
 
+short getVarValue(DecisionNode *leaf, int atomID) {
+    DecisionNode *node = leaf;
+    while (node != NULL) {
+        if (node->decisionAtomID == atomID) return node->polarity;
+        node = node->parent; // sobe pelo pai até achar a variável
+    }
+    return UNDEFINED;
+}
+
 // Verifica se a fórmula inteira é VERDADEIRA dada a interpretação atual
 // Retorna 1 (SAT), 0 (UNSAT) ou -1 (UNDEFINED)
-int evaluateFormula(Formula *f, PartialInterp *pi) {
-    bool hasUndefinedClauses = false; // Checa se o resultado daa formula depende de uma variavél que ainda não teve valor definido
+int evaluateFormula(Formula *f, DecisionNode *leaf) {
+    bool hasUndefinedClauses = false; // Checa se o resultado da formula depende de uma variável que ainda não teve valor definido
 
     Clause *currentClause = f->clauseHead;
     while (currentClause != NULL) {
@@ -96,7 +90,7 @@ int evaluateFormula(Formula *f, PartialInterp *pi) {
         // Percorre os literais dentro de uma cláusula específica
         Literal *currentLiteral = currentClause->literalHead;
         while (currentLiteral != NULL) {
-            short val = pi->truthValue[currentLiteral->atomID];
+            short val = getVarValue(leaf, currentLiteral->atomID);
 
             if (val == UNDEFINED) { clauseIsUndefined = true; }
             else {
@@ -129,7 +123,7 @@ int evaluateFormula(Formula *f, PartialInterp *pi) {
     return true;
 }
 
-DecisionNode *createDecisionNode(int atomID) {
+DecisionNode *createDecisionNode(int atomID, DecisionNode *parent) {
     DecisionNode *node = (DecisionNode *) malloc(sizeof(DecisionNode));
     if (node == NULL) {
         fprintf(stderr, "ERRO: Falha ao alocar DecisionNode.\n");
@@ -140,45 +134,49 @@ DecisionNode *createDecisionNode(int atomID) {
     node->left           = NULL;
     node->right          = NULL;
     node->isSAT          = false;
-    return node;
+    node->parent         = parent;
+    return node;;
 }
 
 // Árvore de Decisão Recurrsiva, resolve o SAT usando Backtracking
-DecisionNode* solveSAT(Formula *f, PartialInterp *pi, int currentVar) {
-    // Cria o nó raiz da Arvore de decisão
-    DecisionNode *node = createDecisionNode(currentVar);
-    if (node == NULL) return NULL;
-
-    // Medida de proteção contra estouro de índice
-    if (currentVar > f->atomCount) { return NULL; }
- 
-    int result = evaluateFormula(f, pi);
-    if (result == 1)  { node->isSAT = true;  return node; }
-    if (result == 0)  { node->isSAT = false; return node; }
-
-    //Ramificação(BACKTRACKING))
-    // Ramo com variável VERDADEIRA (1)
-    pi->truthValue[currentVar] = true; // Modifica o array global diretamente
-    node->polarity = true;
-    node->left = solveSAT(f, pi, currentVar + 1); // Recurssão
+DecisionNode* solveSAT(Formula *f, int currentVar, DecisionNode *parent) {
     
-    if (evaluateFormula(f, pi) == 1 || node->left != NULL && node->left->isSAT ) {
+    int result = evaluateFormula(f, parent);
+    if (result == 1)  { 
+        DecisionNode *leaf = createDecisionNode(currentVar, parent);
+        if (leaf) leaf->isSAT = true;
+        return leaf;
+    }
+    if (result == 0)  { 
+        DecisionNode *leaf = createDecisionNode(currentVar, parent);
+        if (leaf) leaf->isSAT = false;
+        return leaf;
+    }
+
+    //Ramificação
+    DecisionNode *node = createDecisionNode(currentVar, parent);
+    if (node == NULL) return NULL;
+    
+    // Testa o ramo VERDADEIRO (1)
+    node->polarity = true;
+    node->left = solveSAT(f, currentVar + 1, node); // Recursão
+    
+    if (node->left != NULL && node->left->isSAT) {
         node->isSAT = true;
         return node; // Achou SAT, sobe sem desfazer a modificação.
     }
 
-    // Se o caminho 1 falhou, tentamos o ramo com a variável FALSA (0)
-    pi->truthValue[currentVar] = false;
+    // Testa o ramo FALSO (0), somente se o ramo VERDADEIRO falhar
     node->polarity = false;
-    node->right = solveSAT(f, pi, currentVar + 1); // Recurssão
+    node->right = solveSAT(f, currentVar + 1, node); // Recursão
 
-    if (evaluateFormula(f, pi) == 1 || node->right != NULL && node->right->isSAT ) {
+    if (node->right != NULL && node->right->isSAT) {
         node->isSAT = true;
         return node; // Achou SAT, sobe sem desfazer a modificação.
     }
 
     // Se chegou aqui, ambos falharam: desfaz a atribuição e sinaliza UNSAT
-    pi->truthValue[currentVar] = UNDEFINED;
+    node->polarity = UNDEFINED;
     node->isSAT = false;
     return node;
 }
