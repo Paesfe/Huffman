@@ -10,13 +10,14 @@ O programa busca uma solução válida por meio de uma árvore de decisão biná
 
 O problema central consiste em determinar se existe uma atribuição lógica (`Verdadeiro` ou `Falso`) para um conjunto de variáveis que torne toda a fórmula verdadeira, respeitando simultaneamente as regras matemáticas associadas a elas.
 
-### A. O Formato de Entrada Híbrido
-O programa recebe os dados através de um arquivo texto local unificado:
-* Linhas iniciadas com `c` são comentários.
-* A linha `p cnf [átomos] [cláusulas]` define o cabeçalho lógico padrão DIMACS.
-* As linhas numéricas seguintes representam os literais lógicos (terminando em `0`).
-* A linha `t lia [num_equacoes]` define o cabeçalho matemático SMT.
-* As equações seguem o formato mapeado: `f[ID] [a]x +- [b] [operador] [k]` (Ex: `f1 2x + 3 >= 9`).
+### A. O Formato de Entrada Híbrido e Alternância de Modo (SAT ➔ SMT)
+O programa processa a entrada sequencialmente através de um único arquivo de texto local. A estrutura desse arquivo dita dinamicamente o modo de operação do solver:
+
+1. **Inicialização (Modo SAT):** O solver inicia sua execução configurado para o modo **SAT**. Ele ignora comentários (linhas iniciadas com `c`) e processa a linha de cabeçalho padrão DIMACS `p cnf [Literais] [cláusulas]`. As linhas numéricas subsequentes são tratadas como cláusulas booleanas normais (terminadas em `0`).
+2. **O Gatilho de Transição (`t lia`):** A mudança crucial ocorre quando o *parser* encontra a linha contendo **`t lia [num_equacoes]`**. 
+3. **Ativação do Modo SMT:** Assim que essa linha é lida, **o solver desativa o modo puramente booleano e altera seu estado para o modo SMT**. A partir deste ponto, o programa interrompe a leitura de cláusulas DIMACS e passa a interpretar as linhas seguintes estritamente como restrições da Teoria de Aritmética Linear Inteira (LIA).
+
+As equações LIA lidas após a transição seguem o formato mapeado: `f[ID] [a]x +- [b] [operador] [k]` (Ex: `f1 2x + 3 >= 9`), onde o ID da fórmula matemática vincula-se diretamente ao átomo lógico correspondente do DIMACS.
 
 ### B. O Motor SAT: Avaliação e Árvore de Decisão (`solveSAT`)
 A busca booleana é feita através de uma árvore binária recursiva, onde o estado das variáveis é rastreado **no próprio ramo da árvore** (através do ponteiro `parent`), eliminando a necessidade de arrays globais:
