@@ -68,12 +68,15 @@ bool readClauses(Formula *f, FILE *file) {
     return true;
 }
 
+// A Função sobe de nó filho para pai, até retornar ao nó que fez a chamada de função 
 short getVarValue(DecisionNode *leaf, int atomID) {
     DecisionNode *node = leaf;
     while (node != NULL) {
         if (node->decisionAtomID == atomID) return node->polarity;
-        node = node->parent; // sobe pelo pai até achar a variável
+        // Sobe um nível em direção à raiz da árvore
+        node = node->parent;
     }
+    // Se chegou na raiz e não encontrou, a variável ainda não foi decidida neste ramo
     return UNDEFINED;
 }
 

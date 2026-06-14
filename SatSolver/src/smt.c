@@ -204,7 +204,9 @@ DecisionNode* solveSMT(Formula *f, int currentVar, DecisionNode *parent, LIATheo
     // Ramo Verdadeiro (1)
     node->polarity = true;
     
-    // Só desce na recursão se o estado atual for matematicamente consistente
+   
+    //Antes de descer para o próximo nível, verificamos se a atribuição atual quebrou a consistência matemática (ex: x >= 5 E x <= 2).
+    //Se quebrou, não perde tempo processando o ramo esquerdo (node->left).
     if (evaluateMathematicalConsistency(node, theory)) {
         node->left = solveSMT(f, currentVar + 1, node, theory);
         if (node->left != NULL && node->left->isSAT) {
@@ -214,9 +216,10 @@ DecisionNode* solveSMT(Formula *f, int currentVar, DecisionNode *parent, LIATheo
     }
 
     // Ramo FALSO (0)
-    node->polarity = 0;
+    node->polarity = false;
     
-    // Só desce na recursão se o estado atual for matematicamente consistente
+    // Repete novamente a verificação da consistencia matemática
+    //Se quebrou, não perde tempo processando o ramo direito (node->right).
     if (evaluateMathematicalConsistency(node, theory)) {
         node->right = solveSMT(f, currentVar + 1, node, theory);
         if (node->right != NULL && node->right->isSAT) {
@@ -225,7 +228,7 @@ DecisionNode* solveSMT(Formula *f, int currentVar, DecisionNode *parent, LIATheo
         }
     }
 
-    // Se chegou aqui, ambos falharam matematicamente ou booleanamente
+    // Se chegou aqui, ambos falharam matematicamente e/ou booleanamente
     // Reseta a atribuição para UNDEFINED e sinaliza o nó como UNSAT
     node->polarity = UNDEFINED;
     node->isSAT = false;
