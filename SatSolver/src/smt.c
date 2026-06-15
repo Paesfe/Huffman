@@ -180,7 +180,8 @@ bool evaluateMathematicalConsistency(DecisionNode *leaf, LIATheory *theory) {
 // Árvore de Decisão Recursiva com Backtracking.
 // Combina a busca booleana (SAT) com a validação da teoria matemática (LIA).
 DecisionNode* solveSMT(Formula *f, int currentVar, DecisionNode *parent, LIATheory *theory) {
-    // Primeiro Checa o SAT
+    
+    // Verifica o estado da formula com as atribuições atuais
     int booleanEvaluationResult = evaluateFormula(f, parent);
 
     if (booleanEvaluationResult == true) { 
@@ -190,14 +191,13 @@ DecisionNode* solveSMT(Formula *f, int currentVar, DecisionNode *parent, LIATheo
         leaf->isSAT = evaluateMathematicalConsistency(parent, theory);
         return leaf; 
     }
- 
     if (booleanEvaluationResult == false) { 
         DecisionNode *leaf = createDecisionNode(currentVar, parent);
         if (leaf) leaf->isSAT = false;
         return leaf;
     }
 
-    // Ramificação
+    // Ramificação (Somente se booleanEvaluationResult == Indefinida)
     DecisionNode *node = createDecisionNode(currentVar, parent);
     if (node == NULL) return NULL;
 

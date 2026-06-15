@@ -144,19 +144,21 @@ DecisionNode *createDecisionNode(int atomID, DecisionNode *parent) {
 // Árvore de Decisão Recurrsiva, resolve o SAT usando Backtracking
 DecisionNode* solveSAT(Formula *f, int currentVar, DecisionNode *parent) {
     
+    // Verifica o estado da formula com as atribuições atuais
     int result = evaluateFormula(f, parent);
-    if (result == 1)  { 
+    if (result == true)  { 
         DecisionNode *leaf = createDecisionNode(currentVar, parent);
         if (leaf) leaf->isSAT = true;
         return leaf;
     }
-    if (result == 0)  { 
+    if (result == false)  { 
         DecisionNode *leaf = createDecisionNode(currentVar, parent);
         if (leaf) leaf->isSAT = false;
         return leaf;
     }
 
-    //Ramificação
+
+    // Ramificação (Somente se booleanEvaluationResult == Indefinida)
     DecisionNode *node = createDecisionNode(currentVar, parent);
     if (node == NULL) return NULL;
     
