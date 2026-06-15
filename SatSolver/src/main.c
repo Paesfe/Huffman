@@ -2,14 +2,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
-#include "../include/smt.h" // Automaticamente inclui sat.h
 
-
+#include "../include/smt.h" 
 
 FILE *openFile();
 Formula* readFile(FILE *file, LIATheory *theory);
-void printSolution(DecisionNode *root, int totalVars, PartialInterp *pi, LIATheory *theory);
-
+void printSolution(DecisionNode *root, Formula *f, LIATheory *theory);
 
 
 int main() {
@@ -27,29 +25,30 @@ int main() {
         return 1; 
     }
     
-    PartialInterp pi = initializePartialInterp(f);
     DecisionNode *root = NULL;
- 
+    
+    // Identifica o modo execução. (Num de equações == 0) ?  Modo SAT : Modo SMT
     if (t->totalConstraints == 0) {
         printf("[MODO SAT DETECTADO]\n");
         printBooleanFormulaCNF(f);
 
-        root = solveSAT(f, &pi, 1);
+        // vsolveSAT(f, 1, NULL) — começa na variável 1, sem pai (raiz)
+        root = solveSAT(f, 1, NULL);
     } else {
         printf("[MODO SMT LIA DETECTADO] - %d equacoes carregadas.\n", t->totalConstraints);
         printBooleanFormulaCNF(f);
         printLIATheoryConstraints(t);
         
-        root = solveSMT(f, &pi, 1, t);
+        //solveSMT(f, 1, NULL, t) — começa na variável 1, sem pai (raiz)
+        root = solveSMT(f, 1, NULL, t);
     }
 
     printf("\nProcessando a Arvore de Decisao...\n");
-    printSolution(root, f->atomCount, &pi, t);
+    printSolution(root, f, t);
 
     freeTree(root);
     freeFormula(f);
     freeLIATheory(t);
-    free(pi.truthValue);
 
     return 0;
 }
@@ -144,7 +143,7 @@ Formula* readFile(FILE *file, LIATheory *theory) {
     return inputFormula;
 }
 
-void printSolution(DecisionNode *root, int totalVars, PartialInterp *pi, LIATheory *theory) {
+void printSolution(DecisionNode *root, Formula *f, LIATheory *theory) {
     if (root == NULL) return;
 
     if (!root->isSAT) {
@@ -157,11 +156,17 @@ void printSolution(DecisionNode *root, int totalVars, PartialInterp *pi, LIATheo
 
     // Checagem para o tipo de saida, é SMT ou é SAT?
     if (theory != NULL && theory->totalConstraints > 0) {
-        // Invoca a função centralizada corrigida para obter o intervalo final
-        Interval iv = calculateLIAInterval(totalVars, pi, theory);
+        // Desce pelo caminho vencedor até a folha SAT
+        DecisionNode *curr = root;
+        while (curr != NULL && (curr->left != NULL || curr->right != NULL)) {
+            if (curr->polarity == 1 && curr->left  != NULL) curr = curr->left;
+            else if (curr->right != NULL)                   curr = curr->right;
+            else break;
+        }
+
+        Interval iv = calculateLIAInterval(curr, theory);
         char v = (theory->constraintListHead != NULL) ? theory->constraintListHead->mathVar : 'x';
 
-        
         printf("\nSolucoes inteiras para '%c':\n", v);
 
         if (iv.minimumValue == INT_MIN && iv.maximumValue == INT_MAX) { printf("'%c' pode ser qualquer numero inteiro.\n", v); }
@@ -170,9 +175,17 @@ void printSolution(DecisionNode *root, int totalVars, PartialInterp *pi, LIATheo
         else { printf("%d <= %c <= %d\n", iv.minimumValue, v, iv.maximumValue); } 
 
     } else {
+
         printf("Atribuicao Logica:\n");
-        for (int i = 1; i <= totalVars; i++) {
-            printf("  Var %d = %d\n", i, pi->truthValue[i]);
+        DecisionNode *curr = root;
+        while (curr != NULL) {
+            if (curr->decisionAtomID <= f->atomCount) {
+                printf("  Var %d = %d\n", curr->decisionAtomID, curr->polarity);
+            }
+            // Desce pelo ramo que levou ao SAT
+            if      (curr->polarity == 1 && curr->left  != NULL) curr = curr->left;
+            else if (curr->right != NULL)                         curr = curr->right;
+            else break;
         }
     } 
 }

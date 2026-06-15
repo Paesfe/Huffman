@@ -15,13 +15,15 @@ LIATheory *initializeLIATheory() {
     return newTheory;
 }
 
+// Faz a leitura da equações informadas no input
+// Ler equações tanto na forma 'a*x >= k' quanto 'a*x +- b <= k' 
 bool readEquations(Formula *f, LIATheory* t, FILE *file) {
     for (int i = 0; i < t->totalConstraints; i++) {
         int atomID, coefficient, constantValue;
         char mathVar;
         char buffer[128];
 
-        // Lê o cabeçalho do literal mapeado "fX"
+        // Lê o cabeçalho do literal mapeado "fX", ID da variavel booleana Relacionada
         if (fscanf(file, " f%d", &atomID) != 1) return false;
 
         // Lê o restante da linha até o fim para fazer a análise manual (parsing)
@@ -32,10 +34,10 @@ bool readEquations(Formula *f, LIATheory* t, FILE *file) {
         char op[4] = "";
         int target = 0;
 
-        // Tenta ler o formato completo com operador secundário: "2 x + 3 >= 9" ou "2x + 3 >= 9"
+        // Tenta ler o formato completo com operador secundário: "a x + b >= k" ou "ax + b >= k"
         int lidos = sscanf(buffer, "%d %c %c %d %2s %d", &coefficient, &mathVar, &sign, &offset, op, &target);
 
-        // Se falhou, tenta ler o formato simples sem deslocamento: "2 x <= 9"
+        // Se falhou, tenta ler o formato simples sem deslocamento: "a*x <= k"
         if (lidos != 6) {
             sign = '0';
             offset = 0;
@@ -47,7 +49,7 @@ bool readEquations(Formula *f, LIATheory* t, FILE *file) {
             }
         }
 
-        // Rejeita coeficiente zero (causaria divisão por zero em calculateLIAInterval)
+        // Rejeita coeficiente zero
         if (coefficient == 0) {
             fprintf(stderr, "ERRO: Coeficiente zero na equacao: '%s'\n", buffer);
             return false;
@@ -60,6 +62,7 @@ bool readEquations(Formula *f, LIATheory* t, FILE *file) {
             return false;
         }
         
+        // Preenche os equação com os dados lidos
         newConstraint->atomID = atomID;
         newConstraint->coefficient = coefficient;
         newConstraint->mathVar = mathVar;
@@ -75,12 +78,12 @@ bool readEquations(Formula *f, LIATheory* t, FILE *file) {
     return true;
 }
 
-// Arredonda para cima 
+// Divisão de números inteiros, arredondando para baixo 
 int floorDiv(int dividend, int divisor) {
     return dividend / divisor - (((dividend ^ divisor) < 0) && (dividend % divisor != 0));
 }
 
-// Arredonda para baixo
+// Divisão de números inteiros, arredondando para cima
 int ceilDiv(int dividend, int divisor) {
     return dividend / divisor + (((dividend ^ divisor) > 0) && (dividend % divisor != 0));
 }
@@ -101,28 +104,35 @@ static void invertOperator(char op[3]) {
     else if (strcmp(op, ">")  == 0) strcpy(op, "<");
 }
 
-
-Interval calculateLIAInterval(int totalVars, PartialInterp *pi, LIATheory *theory) {
+// Calcula o intervalo válido para a variavel, considerando as clausulas e equações informadas
+Interval calculateLIAInterval(DecisionNode *leaf, LIATheory *theory) {
     Interval validRange = { INT_MIN, INT_MAX };
 
     LIAConstraint *currentConstraint = theory->constraintListHead;
+    
+    //Percorre toda a lista de equações matemáticas 
     while (currentConstraint != NULL) {
-        short val = pi->truthValue[currentConstraint->atomID];
+        // Acessa o valor Booleano da Variavel/ID associado a uma equação
+        short val = getVarValue(leaf, currentConstraint->atomID);
+
+        // Só processa a equação caso a varivel tenha um valor booleano definnido (0 ou 1)
         if (val != UNDEFINED) {
             int adjustedConstant = currentConstraint->constantValue;
             char op[3];
             strcpy(op, currentConstraint->operatorSymbol);
 
+            // Remove o coeficiente linear 'b'
             if (currentConstraint->innerSign == '+') { adjustedConstant -= currentConstraint->innerOffset; } 
             else if (currentConstraint->innerSign == '-') { adjustedConstant += currentConstraint->innerOffset; }
 
+            // Acessa o valor do coeficiente Angular 'a'
             int a = currentConstraint->coefficient;
             
-
-            //Tratamento caso a clausula booleana seja negativa 
+            // Tratamento de clausula booleana negativa 
+            // ~(ax >= k) == (ax < k)
             if (val == 0) { negateOperator(op); } 
 
-            // Se 'a' for negativo, multiplicamos a inequação por -1, invertendo a inequação. ( '<' vira '>')
+            // Tratamento do coeficiente angular negativo, multiplica a equação por (-1): ( '<' vira '>')
             if (a < 0) {
                 a = -a;
                 adjustedConstant = -adjustedConstant;
@@ -153,41 +163,52 @@ Interval calculateLIAInterval(int totalVars, PartialInterp *pi, LIATheory *theor
                 if (limit > validRange.minimumValue) validRange.minimumValue = limit;
             }
         }
+        // Avança para a próxima equação da lista
         currentConstraint = currentConstraint->next;
     }
+
+    // Retorna o intervalo final estreitado. Se min > max, a teoria será declarada INCONSISTENTE!
     return validRange;
 }
 
-bool evaluateMathematicalConsistency(Formula *f, PartialInterp *pi, LIATheory *theory) {
-    Interval validRange = calculateLIAInterval(f->atomCount, pi, theory);
+// Verifica se o intervalo atual é válido
+bool evaluateMathematicalConsistency(DecisionNode *leaf, LIATheory *theory) {
+    Interval validRange = calculateLIAInterval(leaf, theory);
     return (validRange.minimumValue <= validRange.maximumValue);
 }
 
-DecisionNode* solveSMT(Formula *f, PartialInterp *pi, int currentVar, LIATheory *theory) {
-    DecisionNode *node = createDecisionNode(currentVar);
-    if (node == NULL) return NULL;
+// Árvore de Decisão Recursiva com Backtracking.
+// Combina a busca booleana (SAT) com a validação da teoria matemática (LIA).
+DecisionNode* solveSMT(Formula *f, int currentVar, DecisionNode *parent, LIATheory *theory) {
     
-    int booleanEvaluationResult = evaluateFormula(f, pi);
+    // Verifica o estado da formula com as atribuições atuais
+    int booleanEvaluationResult = evaluateFormula(f, parent);
 
     if (booleanEvaluationResult == true) { 
-        // Fórmula booleana satisfeita: verifica consistência matemática
-        node->isSAT = evaluateMathematicalConsistency(f, pi, theory);
-        return node; 
+        // Para um SMT ser SAT, uma Interpretação Parcial tem que gerar um intervalo matemáticamente consistente
+        DecisionNode *leaf = createDecisionNode(currentVar, parent);
+        if (leaf == NULL) return NULL;
+        leaf->isSAT = evaluateMathematicalConsistency(parent, theory);
+        return leaf; 
     }
- 
     if (booleanEvaluationResult == false) { 
-        node->isSAT = false;
-        return node;
+        DecisionNode *leaf = createDecisionNode(currentVar, parent);
+        if (leaf) leaf->isSAT = false;
+        return leaf;
     }
 
-    // Backtracking
+    // Ramificação (Somente se booleanEvaluationResult == Indefinida)
+    DecisionNode *node = createDecisionNode(currentVar, parent);
+    if (node == NULL) return NULL;
+
     // Ramo Verdadeiro (1)
-    pi->truthValue[currentVar] = true; 
-    node->value = true;
+    node->polarity = true;
     
-    // Só desce na recursão se o estado atual for matematicamente consistente
-    if (evaluateMathematicalConsistency(f, pi, theory)) {
-        node->left = solveSMT(f, pi, currentVar + 1, theory);
+   
+    //Antes de descer para o próximo nível, verificamos se a atribuição atual quebrou a consistência matemática (ex: x >= 5 E x <= 2).
+    //Se quebrou, não perde tempo processando o ramo esquerdo (node->left).
+    if (evaluateMathematicalConsistency(node, theory)) {
+        node->left = solveSMT(f, currentVar + 1, node, theory);
         if (node->left != NULL && node->left->isSAT) {
             node->isSAT = true;
             return node;
@@ -195,20 +216,21 @@ DecisionNode* solveSMT(Formula *f, PartialInterp *pi, int currentVar, LIATheory 
     }
 
     // Ramo FALSO (0)
-    pi->truthValue[currentVar] = 0; 
-    node->value = 0;
+    node->polarity = false;
     
-    // Só desce na recursão se o estado atual for matematicamente consistente
-    if (evaluateMathematicalConsistency(f, pi, theory)) {
-        node->right = solveSMT(f, pi, currentVar + 1, theory);
+    // Repete novamente a verificação da consistencia matemática
+    //Se quebrou, não perde tempo processando o ramo direito (node->right).
+    if (evaluateMathematicalConsistency(node, theory)) {
+        node->right = solveSMT(f, currentVar + 1, node, theory);
         if (node->right != NULL && node->right->isSAT) {
             node->isSAT = true;
             return node;
         }
     }
 
-    // Se chegou aqui, ambos falharam: desfaz a atribuição e sinaliza UNSAT
-    pi->truthValue[currentVar] = UNDEFINED;
+    // Se chegou aqui, ambos falharam matematicamente e/ou booleanamente
+    // Reseta a atribuição para UNDEFINED e sinaliza o nó como UNSAT
+    node->polarity = UNDEFINED;
     node->isSAT = false;
     return node;
 }
@@ -223,6 +245,7 @@ void printLIATheoryConstraints(const LIATheory *theory) {
         return;
     }
 
+    // Percorre a lista de equações 
     while (current != NULL) {
         // Exemplo de saída esperada: "f1: 2x + 3 >= 9" ou "f2: 3x <= 10"
         printf("  f%d: %dx", current->atomID, current->coefficient);
@@ -237,6 +260,7 @@ void printLIATheoryConstraints(const LIATheory *theory) {
     }
 }
 
+// Gerenciador de memória
 void freeLIATheory(LIATheory *theory) {
     if (theory == NULL) return;
     LIAConstraint *current = theory->constraintListHead;

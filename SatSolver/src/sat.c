@@ -15,21 +15,6 @@ Formula *initializeFormula(){
     return newFormula;
 }
 
-// Cria um array que armazena a interpretação parcial de cada variável única da formula, inicializando todas como UNDEFINED
-PartialInterp initializePartialInterp(Formula *f){
-    PartialInterp pi;
-    pi.truthValue = malloc(sizeof(short) * (f->atomCount + 1)); 
-    // Verifica a alocação do malloc
-    if (pi.truthValue == NULL) {
-        fprintf(stderr, "ERRO: Falha ao alocar PartialInterp.\n");
-        return pi;
-    }
-    
-    for (int i = 0; i < f->atomCount + 1; i++) { pi.truthValue[i] = UNDEFINED; }
-
-    return pi;
-}
-
 // Cria uma clause vazia, e adiciona no início da lista encadeada de cláusulas
 Clause *addClause(Formula *f) {
     Clause *newClause = (Clause *) malloc(sizeof(Clause));
@@ -60,6 +45,7 @@ Literal *addLiteral(Literal *l, int variable, bool isNegative){
     return newLiteral;
 }
 
+// Faz a leitura da Clausulas que compoem a Formula
 bool readClauses(Formula *f, FILE *file) {
     for (int i = 0; i < f->clauseCount; i++){
         Clause *newClause = addClause(f);
@@ -72,21 +58,32 @@ bool readClauses(Formula *f, FILE *file) {
                 return false; // Informa o erro para quem chamou
             }
 
-            if (temp != 0) { 
-                newClause->literalHead = addLiteral(newClause->literalHead, abs(temp), (temp < 0));
-                newClause->literalCount++;
-            } else { break; }
-
+            // '0' é indicador do fim da Clausula
+            if (temp != 0) { newClause->literalHead = addLiteral(newClause->literalHead, abs(temp), (temp < 0)); }
+            else { break; }
+            
             newClause->literalCount++;
         }
     }
     return true;
 }
 
+// A Função sobe de nó filho para pai, até retornar ao nó que fez a chamada de função 
+short getVarValue(DecisionNode *leaf, int atomID) {
+    DecisionNode *node = leaf;
+    while (node != NULL) {
+        if (node->decisionAtomID == atomID) return node->polarity;
+        // Sobe um nível em direção à raiz da árvore
+        node = node->parent;
+    }
+    // Se chegou na raiz e não encontrou, a variável ainda não foi decidida neste ramo
+    return UNDEFINED;
+}
+
 // Verifica se a fórmula inteira é VERDADEIRA dada a interpretação atual
 // Retorna 1 (SAT), 0 (UNSAT) ou -1 (UNDEFINED)
-int evaluateFormula(Formula *f, PartialInterp *pi) {
-    bool allClausesTrue = true; // Verdade até que se prove o contrário
+int evaluateFormula(Formula *f, DecisionNode *leaf) {
+    bool hasUndefinedClauses = false; // Checa se o resultado da formula depende de uma variável que ainda não teve valor definido
 
     Clause *currentClause = f->clauseHead;
     while (currentClause != NULL) {
@@ -96,77 +93,87 @@ int evaluateFormula(Formula *f, PartialInterp *pi) {
         // Percorre os literais dentro de uma cláusula específica
         Literal *currentLiteral = currentClause->literalHead;
         while (currentLiteral != NULL) {
-            short val = pi->truthValue[currentLiteral->atomID];
+            short val = getVarValue(leaf, currentLiteral->atomID);
 
-            if (val == UNDEFINED) {
-                clauseIsUndefined = true;
-            } else {
+            if (val == UNDEFINED) { clauseIsUndefined = true; }
+            else {
                 // Literal verdadeiro: (val==1 e não negado) OU (val==0 e negado)
-                if ((val == 1  && !currentLiteral->isNegative) ||
-                    (val == 0 &&  currentLiteral->isNegative)) {
+                if ((val == 1  && !currentLiteral->isNegative) || (val == 0 &&  currentLiteral->isNegative)) {
                     clauseIsTrue = true;
                     break;
                 }
             }
+
             currentLiteral = currentLiteral->next;
         }
 
-        // Se a clause ainda não é verdadeira e possui literais indefinidos, é inclonclusivo
-        if (!clauseIsTrue && !clauseIsUndefined) { return 0; }
-        
-        // Se a clause é falsa e não possui literais indefinidos, a fórmula é definitivamente falsa
-        if (!clauseIsTrue) { allClausesTrue = false; }
+        // Se a cláusula NÃO é verdadeira...
+        if (!clauseIsTrue) {
+            // ...e NÃO possui literais indefinidos, ela é 100% FALSA
+            // Se uma cláusula é falsa, a fórmula inteira é falsa
+            if (!clauseIsUndefined) { return false; } 
+            // ...mas possui literais indefinidos, ela está aberta/inconclusiva por enquanto
+            else { hasUndefinedClauses = true; }
+        }
         
         currentClause = currentClause->next;
     }
 
-    return allClausesTrue ? true : UNDEFINED;
+    // Se nenhuma Clausula for completamente falsa e existir alguma que ficou indefinida, a formula inteira está UNDEFINED
+    if (hasUndefinedClauses) { return UNDEFINED; }
+
+    // Se chegou aqui, todas as Clausulas são verdadeiras
+    return true;
 }
 
-DecisionNode *createDecisionNode(int atomID) {
+DecisionNode *createDecisionNode(int atomID, DecisionNode *parent) {
     DecisionNode *node = (DecisionNode *) malloc(sizeof(DecisionNode));
     if (node == NULL) {
         fprintf(stderr, "ERRO: Falha ao alocar DecisionNode.\n");
         return NULL;
     }
     node->decisionAtomID = atomID;
-    node->value          = 0;
+    node->polarity       = 0;
     node->left           = NULL;
     node->right          = NULL;
     node->isSAT          = false;
-    return node;
+    node->parent         = parent;
+    return node;;
 }
 
 // Árvore de Decisão Recurrsiva, resolve o SAT usando Backtracking
-DecisionNode* solveSAT(Formula *f, PartialInterp *pi, int currentVar) {
-    // Cria o nó raiz da Arvore de decisão
-    DecisionNode *node = createDecisionNode(currentVar);
-    if (node == NULL) return NULL;
-
-    if (currentVar > f->atomCount) {
-        node->isSAT = false;
-        return node;
+DecisionNode* solveSAT(Formula *f, int currentVar, DecisionNode *parent) {
+    
+    // Verifica o estado da formula com as atribuições atuais
+    int result = evaluateFormula(f, parent);
+    if (result == true)  { 
+        DecisionNode *leaf = createDecisionNode(currentVar, parent);
+        if (leaf) leaf->isSAT = true;
+        return leaf;
     }
- 
-    int result = evaluateFormula(f, pi);
-    if (result == 1)  { node->isSAT = true;  return node; }
-    if (result == 0)  { node->isSAT = false; return node; }
+    if (result == false)  { 
+        DecisionNode *leaf = createDecisionNode(currentVar, parent);
+        if (leaf) leaf->isSAT = false;
+        return leaf;
+    }
 
-    //Ramificação(BACKTRACKING))
-    // Ramo com variável VERDADEIRA (1)
-    pi->truthValue[currentVar] = true; // Modifica o array global diretamente
-    node->value = true;
-    node->left = solveSAT(f, pi, currentVar + 1);
+
+    // Ramificação (Somente se booleanEvaluationResult == Indefinida)
+    DecisionNode *node = createDecisionNode(currentVar, parent);
+    if (node == NULL) return NULL;
+    
+    // Testa o ramo VERDADEIRO (1)
+    node->polarity = true;
+    node->left = solveSAT(f, currentVar + 1, node); // Recursão
     
     if (node->left != NULL && node->left->isSAT) {
         node->isSAT = true;
         return node; // Achou SAT, sobe sem desfazer a modificação.
     }
 
-    // Se o caminho 1 falhou, tentamos o ramo com a variável FALSA (0)
-    pi->truthValue[currentVar] = false;
-    node->value = false;
-    node->right = solveSAT(f, pi, currentVar + 1);
+    // Testa o ramo FALSO (0), somente se o ramo VERDADEIRO falhar
+    node->polarity = false;
+    node->right = solveSAT(f, currentVar + 1, node); // Recursão
 
     if (node->right != NULL && node->right->isSAT) {
         node->isSAT = true;
@@ -174,12 +181,12 @@ DecisionNode* solveSAT(Formula *f, PartialInterp *pi, int currentVar) {
     }
 
     // Se chegou aqui, ambos falharam: desfaz a atribuição e sinaliza UNSAT
-    pi->truthValue[currentVar] = UNDEFINED;
+    node->polarity = UNDEFINED;
     node->isSAT = false;
     return node;
 }
 
-// Imprime a fórmula lógica no formato clássico de Conjunção de Disjunções (CNF)
+// Imprime a fórmula lógica: (~1 v 2) ^ (1 v ~3)...
 void printBooleanFormulaCNF(const Formula *f) {
     printf("\nFormula Booleana lida:\n");
     
