@@ -1,2 +1,4 @@
-3x + 4 <= 12
-1x - 2 >= 1
+c Este é um arquivo de teste para o meu SMT
+c A formula fixa no codigo é (E1 OR E2)
+2x + 5 <= 10
+3x - 2 >= 4
