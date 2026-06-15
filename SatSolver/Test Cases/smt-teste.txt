@@ -1,0 +1,7 @@
+c comments
+p cnf 2 2
+1 0
+2 0
+t lia 2 
+2x + 1 <= 9
+1x - 2 >= 1

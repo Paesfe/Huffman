@@ -1,8 +1,0 @@
-c 'c' são comentários, eles são desconsiderados
-c
-c Cabeçalho padrão do SAT:
-p cnf <num de Literais> <num de Clausulas>
-<Clausula 1> 0
-<Clausula 2> 0
-...
-<Clausula n> 0
