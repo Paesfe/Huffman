@@ -7,7 +7,7 @@ Repositório com implementações e material de seminário desenvolvidos para a 
 | Pasta | Descrição |
 |---|---|
 | [`Huffman/`](./Huffman) | Compactador/descompactador de arquivos genéricos usando codificação de Huffman. |
-| [`SAT & SMT/`](./SAT-&-SMT) | Resolvedor de fórmulas booleanas (SAT) e de aritmética linear inteira (SMT-LIA) via árvore de decisão com backtracking. |
+| [`SAT & SMT/`](./SAT&SMT) | Resolvedor de fórmulas booleanas (SAT) e de aritmética linear inteira (SMT-LIA) via árvore de decisão com backtracking. |
 | [`Contagem e Plotagem/`](./ContagemPlotagem) | Comparação experimental de desempenho entre BST e AVL (inserção, busca e remoção), com geração de gráficos em MATLAB. |
 | [`Seminario/`](./SeminarioArvoreB+) | Slides do seminário sobre indexação de bancos de dados com Árvore B+. |
 
