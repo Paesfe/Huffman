@@ -154,55 +154,76 @@ f1 1 x >= 5
 f2 1 x <= 10
 ```
 
-Interpretação:
-
-``` text
-f1 = x >= 5
-f2 = x <= 10
-```
-
-Se ambos forem verdadeiros:
-
-``` text
-5 <= x <= 10
-```
-
 ------------------------------------------------------------------------
 
 # Diferença entre SAT e SMT no Input
 
-O parser primeiro resolve a lógica booleana. Se existir `t lia`, ele
-ativa a camada matemática.
+O parser sempre lê a parte booleana primeiro. Se encontrar a diretiva
+`t lia`, o programa ativa o modo SMT e processa também as restrições
+matemáticas.
 
 ------------------------------------------------------------------------
 
 # Estrutura do Projeto
 
 ``` text
-src/
-├── main.c
-├── sat.c
-├── smt.c
-
-include/
-├── sat.h
-├── smt.h
+Sat Solver/
+├── src/
+│   ├── main.c
+│   ├── sat.c
+│   ├── smt.c
+│
+├── include/
+│   ├── sat.h
+│   ├── smt.h
+│
+├── Test Cases/
+│   ├── teste_sat.txt
+│   ├── teste_smt.txt
 ```
 
 ------------------------------------------------------------------------
 
-# Execução
+# Compilação e Execução
 
-Compilar:
+## Pré-requisitos
+
+É necessário ter um compilador C instalado.
+
+------------------------------------------------------------------------
+
+## Compilação
+
+Na raiz do projeto:
+
+Linux/macOS:
 
 ``` bash
-gcc main.c sat.c smt.c -o solver
+gcc src/main.c src/sat.c src/smt.c -o solver
 ```
 
-Executar:
+Windows:
+
+``` bash
+gcc src/main.c src/sat.c src/smt.c -o solver.exe
+```
+
+------------------------------------------------------------------------
+
+## Execução
+
+Execute na raiz do projeto.
+
+Linux/macOS:
 
 ``` bash
 ./solver
+```
+
+Windows:
+
+``` bash
+solver.exe
 ```
 
 O programa solicitará:
@@ -213,12 +234,24 @@ Digite o nome do arquivo a ser lido:
 
 ------------------------------------------------------------------------
 
+## Importante
+
+O executável deve ser rodado a partir da raiz do projeto para que a
+busca automática pelos arquivos funcione corretamente.
+
+------------------------------------------------------------------------
+
 # Resumo
 
-SAT: - Resolve lógica booleana
+## SAT
 
-SMT: - Resolve lógica booleana - Adiciona teoria matemática - Faz poda
-antecipada usando consistência matemática
+-   Resolve lógica booleana
+
+## SMT
+
+-   Resolve lógica booleana
+-   Adiciona teoria matemática
+-   Faz poda antecipada usando consistência matemática
 
 A implementação mantém a mesma árvore para ambos. O SMT apenas adiciona
 uma camada extra de validação.
