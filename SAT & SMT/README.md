@@ -184,7 +184,7 @@ Sat Solver/
 
 ------------------------------------------------------------------------
 
-# Compilação e Execução
+# Compilação e Execução 
 
 ## Pré-requisitos
 
