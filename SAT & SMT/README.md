@@ -205,6 +205,10 @@ Executar:
 ./solver
 ```
 
+## Importante
+
+O executável deve ser rodado a partir da raiz do projeto para que a busca automática pelos arquivos funcione corretamente.
+
 O programa solicitará:
 
 ``` text
